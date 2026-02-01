@@ -27,11 +27,11 @@ static const char *GEOCODE_URL =
 static const char *MARINE_URL = "https://marine-api.open-meteo.com/v1/marine";
 
 // Create display bus and GFX objects
-// 3.5" 480x320 display - using ILI9488 driver (common for 3.5" CYD)
+// 2.8" 320x240 display - using ILI9341 driver (common for ESP32-2432S028R CYD)
 Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI,
                                             TFT_MISO);
-Arduino_GFX *gfx = new Arduino_ILI9488_18bit(bus, TFT_RST, 0 /* rotation */,
-                                             false /* IPS */);
+Arduino_GFX *gfx = new Arduino_ILI9341(bus, TFT_RST, 0 /* rotation */,
+                                       false /* IPS */);
 
 struct LocationInfo {
   float latitude = 0.0f;
