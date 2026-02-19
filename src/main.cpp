@@ -260,7 +260,9 @@ bool connectWifi(const WifiCredentials &creds) {
 
 String touchKeyboardInput(const String &title, const String &initial, bool secret = false) {
   String value = initial;
-  const char *rows[] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM@._-"};
+  bool shiftOn = false;
+  const char *rowsUpper[] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM@._-"};
+  const char *rowsLower[] = {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm@._-"};
   Rect keyRects[44];
   String keyLabels[44];
   int keyCount = 0;
@@ -283,6 +285,7 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
     if (shown.length() > 28) shown = shown.substring(shown.length() - 28);
     gfx->println(shown);
 
+    const char **rows = shiftOn ? rowsUpper : rowsLower;
     keyCount = 0;
     int y = 66;
     for (int r = 0; r < 4; ++r) {
@@ -299,10 +302,12 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
       y += 28;
     }
 
-    Rect back = {8, 180, 74, 26};
-    Rect clear = {88, 180, 74, 26};
-    Rect space = {168, 180, 74, 26};
-    Rect done = {248, 180, 64, 26};
+    Rect shift = {8, 180, 60, 26};
+    Rect back = {74, 180, 60, 26};
+    Rect clear = {140, 180, 60, 26};
+    Rect space = {206, 180, 60, 26};
+    Rect done = {272, 180, 40, 26};
+    drawButton(shift, shiftOn ? "ABC" : "abc", MAGENTA, WHITE, 1);
     drawButton(back, "<-", 0xFD20, BLACK, 1);
     drawButton(clear, "CLR", RED, WHITE, 1);
     drawButton(space, "SPC", BLUE, WHITE, 1);
@@ -327,6 +332,11 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
         }
       }
 
+      if (pointInRect(p.x, p.y, shift)) {
+        shiftOn = !shiftOn;
+        while (touch.touched()) delay(20);
+        goto redraw;
+      }
       if (pointInRect(p.x, p.y, back) && !value.isEmpty()) {
         value.remove(value.length() - 1);
         while (touch.touched()) delay(20);
