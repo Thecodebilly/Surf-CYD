@@ -105,7 +105,7 @@ Theme darkTheme = {
   CYAN,       // textSecondary (accent text)
   YELLOW,     // accent
   0x2C40,     // buttonPrimary (dark green)
-  0x18C3,     // buttonSecondary (dark teal)
+  0x8000,     // buttonSecondary (dark red)
   0x8000,     // buttonDanger (dark red)
   0xCA00,     // buttonWarning (dark orange)
   0x2104,     // buttonKeys (dark gray)
@@ -122,7 +122,7 @@ Theme lightTheme = {
   BLUE,       // textSecondary
   0xFD20,     // accent (orange)
   GREEN,      // buttonPrimary
-  BLUE,       // buttonSecondary
+  RED,        // buttonSecondary
   RED,        // buttonDanger
   0xFD20,     // buttonWarning (orange)
   0xCE79,     // buttonKeys (light gray)
@@ -361,11 +361,11 @@ bool connectWifi(const WifiCredentials &creds) {
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(creds.ssid.c_str(), creds.password.c_str());
-  showStatus("Connecting Wi-Fi", creds.ssid, CYAN);
+  showStatus("Connecting Wi-Fi", creds.ssid, currentTheme.textSecondary);
 
   for (uint8_t attempt = 0; attempt < 60; ++attempt) {
     if (WiFi.status() == WL_CONNECTED) {
-      showStatus("Wi-Fi connected", WiFi.localIP().toString(), GREEN);
+      showStatus("Wi-Fi connected", WiFi.localIP().toString(), currentTheme.success);
       logInfo("Connected to Wi-Fi " + creds.ssid);
       delay(1000);
       return true;
@@ -374,7 +374,7 @@ bool connectWifi(const WifiCredentials &creds) {
   }
 
   logError("Wi-Fi connection failed for SSID: " + creds.ssid);
-  showStatus("Wi-Fi failed", "Tap to re-enter", RED);
+  showStatus("Wi-Fi failed", "Tap to re-enter", currentTheme.error);
   return false;
 }
 
@@ -788,11 +788,78 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   return forecast;
 }
 
+void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
+  // Draw sun with rays (good surf)
+  int16_t sunRadius = 30;
+  
+  // Draw sun rays (8 rays around the circle)
+  for (int i = 0; i < 8; i++) {
+    float angle = i * PI / 4.0;
+    int16_t x1 = x + cos(angle) * (sunRadius + 5);
+    int16_t y1 = y + sin(angle) * (sunRadius + 5);
+    int16_t x2 = x + cos(angle) * (sunRadius + 18);
+    int16_t y2 = y + sin(angle) * (sunRadius + 18);
+    gfx->drawLine(x1, y1, x2, y2, color);
+    gfx->drawLine(x1+1, y1, x2+1, y2, color);  // Thicker rays
+    gfx->drawLine(x1, y1+1, x2, y2+1, color);
+  }
+  
+  // Draw sun circle
+  gfx->fillCircle(x, y, sunRadius, color);
+  
+  // Draw happy face on sun
+  uint16_t faceColor = currentTheme.background;
+  gfx->fillCircle(x - 10, y - 8, 4, faceColor);  // Left eye
+  gfx->fillCircle(x + 10, y - 8, 4, faceColor);  // Right eye
+  
+  // Happy smile (arc)
+  for (int i = -15; i <= 15; i++) {
+    int16_t sx = x + i;
+    int16_t sy = y + 8 + (int16_t)(sqrt(max(0, 225 - i*i)) / 2);
+    gfx->drawPixel(sx, sy, faceColor);
+    gfx->drawPixel(sx, sy+1, faceColor);
+  }
+}
+
+void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
+  // Draw storm cloud with rain (bad surf)
+  
+  // Cloud body (three overlapping circles)
+  gfx->fillCircle(x - 20, y, 18, color);
+  gfx->fillCircle(x, y - 10, 22, color);
+  gfx->fillCircle(x + 20, y, 18, color);
+  gfx->fillRect(x - 35, y, 70, 15, color);
+  
+  // Rain drops (diagonal lines)
+  uint16_t rainColor = color;
+  for (int i = 0; i < 5; i++) {
+    int16_t rx = x - 25 + i * 12;
+    int16_t ry = y + 18;
+    gfx->drawLine(rx, ry, rx + 3, ry + 10, rainColor);
+    gfx->drawLine(rx + 1, ry, rx + 4, ry + 10, rainColor);
+    gfx->drawLine(rx + 1, ry + 14, rx + 4, ry + 22, rainColor);
+    gfx->drawLine(rx + 2, ry + 14, rx + 5, ry + 22, rainColor);
+  }
+  
+  // Sad face on cloud
+  uint16_t faceColor = currentTheme.background;
+  gfx->fillCircle(x - 10, y - 5, 3, faceColor);  // Left eye
+  gfx->fillCircle(x + 10, y - 5, 3, faceColor);  // Right eye
+  
+  // Sad frown (inverted arc)
+  for (int i = -12; i <= 12; i++) {
+    int16_t sx = x + i;
+    int16_t sy = y + 10 - (int16_t)(sqrt(max(0, 144 - i*i)) / 2.5);
+    gfx->drawPixel(sx, sy, faceColor);
+    gfx->drawPixel(sx, sy-1, faceColor);
+  }
+}
+
 void drawForgetButton() {
-  forgetButton = {gfx->width() - 310, 8, 98, 24};
-  forgetLocationButton = {gfx->width() - 206, 8, 98, 24};
-  themeButton = {gfx->width() - 102, 8, 98, 24};
-  drawButton(forgetButton, "Forget WiFi", currentTheme.buttonDanger, currentTheme.text, 1);
+  forgetButton = {gfx->width() - 270, 8, 85, 24};
+  forgetLocationButton = {gfx->width() - 180, 8, 85, 24};
+  themeButton = {gfx->width() - 90, 8, 85, 24};
+  drawButton(forgetButton, "Forget WiFi", currentTheme.error, currentTheme.text, 1);
   drawButton(forgetLocationButton, "Forget Loc", currentTheme.buttonWarning, currentTheme.text, 1);
   drawButton(themeButton, darkMode ? "Light" : "Dark", currentTheme.buttonSecondary, currentTheme.text, 1);
 }
@@ -807,17 +874,30 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   gfx->println("Surf spot");
 
   gfx->setTextColor(currentTheme.text);
-  gfx->setTextSize(3);
+  gfx->setTextSize(5);
   gfx->setCursor(10, 38);
   String name = location.displayName;
-  if (name.length() > 20) name = name.substring(0, 20) + "...";
+  // Get string before 2nd comma for shorter display
+  if (name.length() > 20) {
+    gfx->setTextSize(2);
+    int firstComma = name.indexOf(',');
+    if (firstComma >= 0) {
+      int secondComma = name.indexOf(',', firstComma + 1);
+      if (secondComma >= 0) {
+        name = name.substring(0, secondComma);
+      }
+    }
+  }
+  if (name.length()> 20 ) gfx->setTextSize(3);
+  
+  if (name.length() > 30) name = name.substring(0, 30) + "...";
   gfx->println(name);
 
   gfx->setTextColor(currentTheme.accent);
   gfx->setCursor(10, 80);
   gfx->println("Wave height");
   gfx->setTextColor(currentTheme.text);
-  gfx->setTextSize(6);
+  gfx->setTextSize(9);
   gfx->setCursor(10, 110);
   float waveHeightFeet = forecast.waveHeight * 3.28084;
   gfx->println(String(waveHeightFeet, 1) + " ft");
@@ -825,18 +905,20 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   bool happy = forecast.waveHeight >= 1.0f;
   uint16_t accent = happy ? currentTheme.success : currentTheme.error;
   gfx->setTextColor(currentTheme.text);
-  gfx->setTextSize(3);
-  gfx->setCursor(10, 175);
-  gfx->println("Period / Dir");
+  gfx->setTextSize(5);
+  gfx->setCursor(10, 200);
+  gfx->println("Period | Dir");
   gfx->setTextColor(accent);
-  gfx->setCursor(10, 203);
-  String detailStr = String(forecast.wavePeriod, 1) + "s  " + String(forecast.waveDirection, 0) + (char)248;
+  gfx->setCursor(10, 255);
+  String detailStr = String(forecast.wavePeriod, 1) + "s     " + String(forecast.waveDirection, 0) + (char)248;
   gfx->println(detailStr);
 
-  gfx->setTextSize(8);
-  gfx->setCursor(w - 120, 110);
-  gfx->setTextColor(accent);
-  gfx->println(happy ? ":)" : ":(");
+  // Draw surf condition graphic
+  if (happy) {
+    drawGoodSurfGraphic(w - 70, 150, accent);
+  } else {
+    drawBadSurfGraphic(w - 70, 150, accent);
+  }
 
   drawForgetButton();
 }
@@ -934,19 +1016,19 @@ void loop() {
     locationRetryCount = 0;  // Reset retry count for new location
   }
 
-  showStatus("Finding spot", surfLocation, CYAN);
+  showStatus("Finding spot", surfLocation, currentTheme.textSecondary);
   if (!cachedLocation.valid) cachedLocation = fetchLocation(surfLocation);
   if (!cachedLocation.valid) {
     locationRetryCount++;
     if (locationRetryCount >= 3) {
-      showStatus("Location failed", "Enter new location", RED);
+      showStatus("Location failed", "Enter new location", currentTheme.error);
       delay(3000);
       surfLocation = "";
       cachedLocation = LocationInfo();
       locationRetryCount = 0;
       return;
     }
-    showStatus("Location failed", String("Retry ") + String(locationRetryCount) + "/3", RED);
+    showStatus("Location failed", String("Retry ") + String(locationRetryCount) + "/3", currentTheme.error);
     delay(4000);
     return;
   }
@@ -954,10 +1036,10 @@ void loop() {
   // Successfully found location, reset retry count
   locationRetryCount = 0;
 
-  showStatus("Fetching surf", cachedLocation.displayName, CYAN);
+  showStatus("Fetching surf", cachedLocation.displayName, currentTheme.textSecondary);
   SurfForecast forecast = fetchSurfForecast(cachedLocation.latitude, cachedLocation.longitude);
   if (!forecast.valid) {
-    showStatus("Fetch failed", "Retrying...", RED);
+    showStatus("Fetch failed", "Retrying...", currentTheme.error);
     delay(4000);
     return;
   }
