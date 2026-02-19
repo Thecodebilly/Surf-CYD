@@ -189,9 +189,13 @@ void deleteWifiCredentials() {
   wifiCredentials = WifiCredentials();
 }
 
-bool saveSurfLocation(const String &location) {
-  DynamicJsonDocument doc(256);
-  doc["location"] = location;
+bool saveSurfLocation(const LocationInfo &locInfo) {
+  if (!locInfo.valid) return false;
+  
+  DynamicJsonDocument doc(512);
+  doc["location"] = locInfo.displayName;
+  doc["latitude"] = locInfo.latitude;
+  doc["longitude"] = locInfo.longitude;
 
   File f = SPIFFS.open(LOCATION_FILE, FILE_WRITE);
   if (!f) {
@@ -208,29 +212,36 @@ bool saveSurfLocation(const String &location) {
   return true;
 }
 
-String loadSurfLocation() {
+LocationInfo loadSurfLocationInfo() {
+  LocationInfo info;
   if (!SPIFFS.exists(LOCATION_FILE)) {
     logInfo("No saved location file.");
-    return "";
+    return info;
   }
 
   File f = SPIFFS.open(LOCATION_FILE, FILE_READ);
   if (!f) {
     logError("Failed to open location file for read.");
-    return "";
+    return info;
   }
 
-  DynamicJsonDocument doc(256);
+  DynamicJsonDocument doc(512);
   DeserializationError err = deserializeJson(doc, f);
   f.close();
   if (err) {
     logError("Failed to parse location file.");
-    return "";
+    return info;
   }
 
-  String location = doc["location"] | "";
-  if (!location.isEmpty()) logInfo("Loaded saved surf location.");
-  return location;
+  info.displayName = doc["location"] | "";
+  info.latitude = doc["latitude"] | 0.0f;
+  info.longitude = doc["longitude"] | 0.0f;
+  info.valid = !info.displayName.isEmpty() && (info.latitude != 0.0f || info.longitude != 0.0f);
+  
+  if (info.valid) {
+    logInfo("Loaded location: " + info.displayName);
+  }
+  return info;
 }
 
 void deleteSurfLocation() {
@@ -300,7 +311,7 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
       for (int i = 0; i < len; ++i) {
         Rect kr = {int16_t(8 + i * (keyW + 2)), int16_t(y), int16_t(keyW), int16_t(24)};
         String label = String(rows[r][i]);
-        drawButton(kr, label, 0x7BEF, WHITE, 1);
+        drawButton(kr, label, 0x2104, WHITE, 1);  // Dark gray buttons
         keyRects[keyCount] = kr;
         keyLabels[keyCount] = label;
         keyCount++;
@@ -325,10 +336,6 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
         delay(50);
         continue;
       }
-      
-      // Draw touch indicator for debugging
-      gfx->fillCircle(p.x, p.y, 3, RED);
-      delay(100);  // Show indicator briefly
 
       for (int i = 0; i < keyCount; ++i) {
         if (pointInRect(p.x, p.y, keyRects[i])) {
@@ -543,7 +550,7 @@ String runLocationSetupTouch() {
       while (touch.touched()) delay(20);
       // Ensure we have valid location coordinates before saving
       if (cachedLocation.valid) {
-        saveSurfLocation(cachedLocation.displayName);
+        saveSurfLocation(cachedLocation);
         return cachedLocation.displayName;
       } else {
         // Need to search and select first
@@ -569,7 +576,7 @@ String runLocationSetupTouch() {
       auto matches = fetchLocationMatches(DEFAULT_SURF_LOCATION, 1);
       if (!matches.empty()) {
         cachedLocation = matches[0];
-        saveSurfLocation(matches[0].displayName);
+        saveSurfLocation(cachedLocation);
         return matches[0].displayName;
       } else {
         gfx->setTextColor(RED);
@@ -793,19 +800,12 @@ void setup() {
 
   ensureWifiConnected();
 
-  surfLocation = loadSurfLocation();
-  if (surfLocation.isEmpty()) {
+  cachedLocation = loadSurfLocationInfo();
+  if (!cachedLocation.valid) {
     surfLocation = runLocationSetupTouch();
   } else {
-    // Try to fetch the saved location's coordinates
-    showStatus("Loading location", surfLocation, CYAN);
-    cachedLocation = fetchLocation(surfLocation);
-    if (!cachedLocation.valid) {
-      // Saved location is invalid, prompt for new one
-      showStatus("Saved location failed", "Enter new location", RED);
-      delay(2000);
-      surfLocation = runLocationSetupTouch();
-    }
+    surfLocation = cachedLocation.displayName;
+    logInfo("Using saved location: " + surfLocation);
   }
 }
 
