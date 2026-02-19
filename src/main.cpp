@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <vector>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -8,7 +9,7 @@
 #include <SPI.h>
 #include <XPT2046_Touchscreen.h>
 
-const char *DEFAULT_SURF_LOCATION = "Huntington Beach, CA";
+const char *DEFAULT_SURF_LOCATION = "Mayport, Florida, United States";
 const char *WIFI_FILE = "/wifi.json";
 const char *LOCATION_FILE = "/location.json";
 
@@ -76,9 +77,14 @@ WifiCredentials wifiCredentials;
 Rect forgetButton = {0, 0, 0, 0};
 Rect forgetLocationButton = {0, 0, 0, 0};
 String surfLocation = DEFAULT_SURF_LOCATION;
+int locationRetryCount = 0;
 
 void logInfo(const String &message) { Serial.printf("[INFO  %10lu ms] %s\n", millis(), message.c_str()); }
 void logError(const String &message) { Serial.printf("[ERROR %10lu ms] %s\n", millis(), message.c_str()); }
+
+// Forward declarations
+std::vector<LocationInfo> fetchLocationMatches(const String &location, int maxResults);
+int selectLocationFromList(const std::vector<LocationInfo> &locations);
 
 bool pointInRect(int16_t x, int16_t y, const Rect &r) {
   return x >= r.x && y >= r.y && x < (r.x + r.w) && y < (r.y + r.h);
@@ -232,7 +238,7 @@ void deleteSurfLocation() {
     SPIFFS.remove(LOCATION_FILE);
     logInfo("Deleted saved surf location.");
   }
-  surfLocation = DEFAULT_SURF_LOCATION;
+  surfLocation = "";  // Clear location to force re-entry
   cachedLocation = LocationInfo();
 }
 
@@ -417,8 +423,60 @@ WifiCredentials runWifiSetupTouch() {
   }
 }
 
+int selectLocationFromList(const std::vector<LocationInfo> &locations) {
+  if (locations.empty()) return -1;
+  
+  const int itemHeight = 36;
+  const int startY = 40;
+  
+  while (true) {
+    gfx->fillScreen(BLACK);
+    gfx->setTextColor(CYAN);
+    gfx->setTextSize(2);
+    gfx->setCursor(10, 10);
+    gfx->println("Select Location:");
+    
+    std::vector<Rect> buttons;
+    for (size_t i = 0; i < locations.size() && i < 7; i++) {
+      Rect r = {8, int16_t(startY + i * itemHeight), int16_t(gfx->width() - 16), int16_t(itemHeight - 4)};
+      String label = locations[i].displayName;
+      if (label.length() > 35) label = label.substring(0, 35) + "...";
+      drawButton(r, label, 0x4A49, WHITE, 1);
+      buttons.push_back(r);
+    }
+    
+    // Cancel button
+    Rect cancelBtn = {8, int16_t(startY + 7 * itemHeight), int16_t(gfx->width() - 16), 30};
+    drawButton(cancelBtn, "Cancel", RED, WHITE, 2);
+    
+    while (true) {
+      TouchPoint p = getTouchPoint();
+      if (!p.pressed) {
+        delay(50);
+        continue;
+      }
+      
+      // Check location buttons
+      for (size_t i = 0; i < buttons.size(); i++) {
+        if (pointInRect(p.x, p.y, buttons[i])) {
+          while (touch.touched()) delay(20);
+          return (int)i;
+        }
+      }
+      
+      // Check cancel button
+      if (pointInRect(p.x, p.y, cancelBtn)) {
+        while (touch.touched()) delay(20);
+        return -1;
+      }
+      
+      delay(50);
+    }
+  }
+}
+
 String runLocationSetupTouch() {
-  String location = surfLocation;
+  String location = "";  // Start fresh each time
   Rect locationButton = {12, 76, 296, 44};
   Rect saveButton = {12, 140, 144, 44};
   Rect skipButton = {164, 140, 144, 44};
@@ -449,16 +507,77 @@ String runLocationSetupTouch() {
 
     if (pointInRect(p.x, p.y, locationButton)) {
       while (touch.touched()) delay(20);
-      location = touchKeyboardInput("Enter surf location", location, false);
-      needsRedraw = true;
+      String searchTerm = touchKeyboardInput("Enter surf location", location, false);
+      if (!searchTerm.isEmpty()) {
+        // Show searching message
+        gfx->fillScreen(BLACK);
+        gfx->setTextColor(CYAN);
+        gfx->setTextSize(2);
+        gfx->setCursor(10, 10);
+        gfx->println("Searching locations...");
+        
+        // Fetch matching locations
+        auto matches = fetchLocationMatches(searchTerm, 8);
+        
+        if (matches.empty()) {
+          gfx->setCursor(10, 50);
+          gfx->setTextColor(RED);
+          gfx->println("No locations found");
+          delay(2000);
+          needsRedraw = true;
+        } else if (matches.size() == 1) {
+          location = matches[0].displayName;
+          cachedLocation = matches[0];  // Cache the full location info
+          needsRedraw = true;
+        } else {
+          // Show selection list
+          int selectedIndex = selectLocationFromList(matches);
+          if (selectedIndex >= 0 && selectedIndex < (int)matches.size()) {
+            location = matches[selectedIndex].displayName;
+            cachedLocation = matches[selectedIndex];  // Cache the full location info
+          }
+          needsRedraw = true;
+        }
+      }
     } else if (pointInRect(p.x, p.y, saveButton) && !location.isEmpty()) {
       while (touch.touched()) delay(20);
-      saveSurfLocation(location);
-      return location;
+      // Ensure we have valid location coordinates before saving
+      if (cachedLocation.valid) {
+        saveSurfLocation(cachedLocation.displayName);
+        return cachedLocation.displayName;
+      } else {
+        // Need to search and select first
+        gfx->fillScreen(BLACK);
+        gfx->setTextColor(RED);
+        gfx->setTextSize(2);
+        gfx->setCursor(10, 100);
+        gfx->println("Please search and");
+        gfx->setCursor(10, 125);
+        gfx->println("select location first");
+        delay(2000);
+        needsRedraw = true;
+      }
     } else if (pointInRect(p.x, p.y, skipButton)) {
       while (touch.touched()) delay(20);
-      saveSurfLocation(DEFAULT_SURF_LOCATION);
-      return DEFAULT_SURF_LOCATION;
+      // Fetch default location
+      gfx->fillScreen(BLACK);
+      gfx->setTextColor(CYAN);
+      gfx->setTextSize(2);
+      gfx->setCursor(10, 100);
+      gfx->println("Loading default...");
+      
+      auto matches = fetchLocationMatches(DEFAULT_SURF_LOCATION, 1);
+      if (!matches.empty()) {
+        cachedLocation = matches[0];
+        saveSurfLocation(matches[0].displayName);
+        return matches[0].displayName;
+      } else {
+        gfx->setTextColor(RED);
+        gfx->setCursor(10, 125);
+        gfx->println("Default location failed");
+        delay(2000);
+        needsRedraw = true;
+      }
     }
 
     while (touch.touched()) delay(20);
@@ -482,36 +601,47 @@ String urlEncode(const String &value) {
   return encoded;
 }
 
-LocationInfo fetchLocation(const String &location) {
-  LocationInfo info;
-  if (WiFi.status() != WL_CONNECTED) return info;
+std::vector<LocationInfo> fetchLocationMatches(const String &location, int maxResults = 10) {
+  std::vector<LocationInfo> matches;
+  if (WiFi.status() != WL_CONNECTED) return matches;
 
   HTTPClient http;
-  String url = String(GEOCODE_URL) + "?name=" + urlEncode(location) + "&count=1&language=en&format=json";
+  String url = String(GEOCODE_URL) + "?name=" + urlEncode(location) + "&count=" + String(maxResults) + "&language=en&format=json";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(url);
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
     http.end();
-    return info;
+    return matches;
   }
 
   DynamicJsonDocument doc(12 * 1024);
   String payload = http.getString();
   http.end();
-  if (deserializeJson(doc, payload)) return info;
+  if (deserializeJson(doc, payload)) return matches;
 
-  JsonObject first = doc["results"][0];
-  if (first.isNull()) return info;
+  JsonArray results = doc["results"];
+  if (results.isNull()) return matches;
 
-  info.latitude = first["latitude"] | 0.0f;
-  info.longitude = first["longitude"] | 0.0f;
-  info.displayName = String((const char *)first["name"]);
-  String admin1 = first["admin1"] | "";
-  String country = first["country"] | "";
-  if (!admin1.isEmpty()) info.displayName += ", " + admin1;
-  if (!country.isEmpty()) info.displayName += ", " + country;
-  info.valid = true;
+  for (JsonObject result : results) {
+    LocationInfo info;
+    info.latitude = result["latitude"] | 0.0f;
+    info.longitude = result["longitude"] | 0.0f;
+    info.displayName = String((const char *)result["name"]);
+    String admin1 = result["admin1"] | "";
+    String country = result["country"] | "";
+    if (!admin1.isEmpty()) info.displayName += ", " + admin1;
+    if (!country.isEmpty()) info.displayName += ", " + country;
+    info.valid = true;
+    matches.push_back(info);
+  }
+  return matches;
+}
+
+LocationInfo fetchLocation(const String &location) {
+  LocationInfo info;
+  auto matches = fetchLocationMatches(location, 1);
+  if (!matches.empty()) return matches[0];
   return info;
 }
 
@@ -560,38 +690,38 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   int16_t w = gfx->width();
 
   gfx->setTextColor(CYAN);
-  gfx->setTextSize(2);
-  gfx->setCursor(10, 12);
+  gfx->setTextSize(3);
+  gfx->setCursor(10, 10);
   gfx->println("Surf spot");
 
   gfx->setTextColor(WHITE);
-  gfx->setTextSize(2);
-  gfx->setCursor(10, 34);
+  gfx->setTextSize(3);
+  gfx->setCursor(10, 38);
   String name = location.displayName;
-  if (name.length() > 24) name = name.substring(0, 24) + "...";
+  if (name.length() > 20) name = name.substring(0, 20) + "...";
   gfx->println(name);
 
   gfx->setTextColor(YELLOW);
-  gfx->setCursor(10, 72);
+  gfx->setCursor(10, 80);
   gfx->println("Wave height");
   gfx->setTextColor(WHITE);
-  gfx->setTextSize(4);
-  gfx->setCursor(10, 94);
+  gfx->setTextSize(6);
+  gfx->setCursor(10, 110);
   gfx->println(String(forecast.waveHeight, 2) + " m");
 
   bool happy = forecast.waveHeight >= 1.0f;
   uint16_t accent = happy ? GREEN : RED;
   gfx->setTextColor(WHITE);
-  gfx->setTextSize(2);
-  gfx->setCursor(10, 158);
-  gfx->println("Period / Direction");
+  gfx->setTextSize(3);
+  gfx->setCursor(10, 175);
+  gfx->println("Period / Dir");
   gfx->setTextColor(accent);
-  gfx->setCursor(10, 182);
+  gfx->setCursor(10, 203);
   String detailStr = String(forecast.wavePeriod, 1) + "s  " + String(forecast.waveDirection, 0) + (char)248;
   gfx->println(detailStr);
 
-  gfx->setTextSize(6);
-  gfx->setCursor(w - 90, 120);
+  gfx->setTextSize(8);
+  gfx->setCursor(w - 120, 110);
   gfx->setTextColor(accent);
   gfx->println(happy ? ":)" : ":(");
 
@@ -633,6 +763,8 @@ bool handleMainScreenTouch() {
     deleteSurfLocation();
     showStatus("Location deleted", "Reconfigure location", 0xFD20);
     delay(1200);
+    surfLocation = "";  // Ensure it's cleared
+    cachedLocation = LocationInfo();
     return true;
   }
   return false;
@@ -662,21 +794,48 @@ void setup() {
   ensureWifiConnected();
 
   surfLocation = loadSurfLocation();
-  if (surfLocation.isEmpty()) surfLocation = runLocationSetupTouch();
+  if (surfLocation.isEmpty()) {
+    surfLocation = runLocationSetupTouch();
+  } else {
+    // Try to fetch the saved location's coordinates
+    showStatus("Loading location", surfLocation, CYAN);
+    cachedLocation = fetchLocation(surfLocation);
+    if (!cachedLocation.valid) {
+      // Saved location is invalid, prompt for new one
+      showStatus("Saved location failed", "Enter new location", RED);
+      delay(2000);
+      surfLocation = runLocationSetupTouch();
+    }
+  }
 }
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) ensureWifiConnected();
 
-  if (surfLocation.isEmpty()) surfLocation = runLocationSetupTouch();
+  if (surfLocation.isEmpty()) {
+    surfLocation = runLocationSetupTouch();
+    locationRetryCount = 0;  // Reset retry count for new location
+  }
 
   showStatus("Finding spot", surfLocation, CYAN);
   if (!cachedLocation.valid) cachedLocation = fetchLocation(surfLocation);
   if (!cachedLocation.valid) {
-    showStatus("Location failed", "Retrying...", RED);
+    locationRetryCount++;
+    if (locationRetryCount >= 3) {
+      showStatus("Location failed", "Enter new location", RED);
+      delay(3000);
+      surfLocation = "";
+      cachedLocation = LocationInfo();
+      locationRetryCount = 0;
+      return;
+    }
+    showStatus("Location failed", String("Retry ") + String(locationRetryCount) + "/3", RED);
     delay(4000);
     return;
   }
+  
+  // Successfully found location, reset retry count
+  locationRetryCount = 0;
 
   showStatus("Fetching surf", cachedLocation.displayName, CYAN);
   SurfForecast forecast = fetchSurfForecast(cachedLocation.latitude, cachedLocation.longitude);
@@ -693,6 +852,7 @@ void loop() {
     if (handleMainScreenTouch()) {
       ensureWifiConnected();
       cachedLocation = LocationInfo();
+      locationRetryCount = 0;  // Reset retry count when user manually changes location
       break;
     }
     delay(50);
