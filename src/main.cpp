@@ -710,7 +710,7 @@ float runWaveHeightSetupTouch() {
       gfx->setTextSize(3);
       gfx->setCursor(10, 35);
       gfx->println("What size waves");
-      gfx->setCursor(10, 48);
+      gfx->setCursor(10, 60);
       gfx->println("make you happy?");
       
       // Draw slider bar
