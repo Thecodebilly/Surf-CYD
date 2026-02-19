@@ -111,7 +111,7 @@ TouchPoint getTouchPoint() {
 
 void drawButton(const Rect &r, const String &label, uint16_t bg, uint16_t fg = BLACK, uint8_t textSize = 2) {
   gfx->fillRoundRect(r.x, r.y, r.w, r.h, 6, bg);
-  gfx->drawRoundRect(r.x, r.y, r.w, r.h, 6, WHITE);
+  gfx->drawRoundRect(r.x, r.y, r.w, r.h, 6, BLACK);
   gfx->setTextColor(fg);
   gfx->setTextSize(textSize);
   int16_t tx = r.x + 8;
@@ -714,7 +714,8 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   gfx->setTextColor(WHITE);
   gfx->setTextSize(6);
   gfx->setCursor(10, 110);
-  gfx->println(String(forecast.waveHeight, 2) + " m");
+  float waveHeightFeet = forecast.waveHeight * 3.28084;
+  gfx->println(String(waveHeightFeet, 1) + " ft");
 
   bool happy = forecast.waveHeight >= 1.0f;
   uint16_t accent = happy ? GREEN : RED;
