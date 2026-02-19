@@ -8,8 +8,9 @@
 #include <SPI.h>
 #include <XPT2046_Touchscreen.h>
 
-const char *SURF_LOCATION = "Huntington Beach, CA";
+const char *DEFAULT_SURF_LOCATION = "Huntington Beach, CA";
 const char *WIFI_FILE = "/wifi.json";
+const char *LOCATION_FILE = "/location.json";
 
 #define TFT_CS 15
 #define TFT_DC 2
@@ -33,7 +34,7 @@ static const char *GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search
 static const char *MARINE_URL = "https://marine-api.open-meteo.com/v1/marine";
 
 Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI, TFT_MISO);
-Arduino_GFX *gfx = new Arduino_ILI9341(bus, TFT_RST, 1 /* landscape */, false /* IPS */);
+Arduino_GFX *gfx = new Arduino_ST7796(bus, TFT_RST, 1 /* rotation */, true /* IPS */, 320, 480, 0, 0, 0, 0);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
 struct LocationInfo {
@@ -73,6 +74,8 @@ struct Rect {
 LocationInfo cachedLocation;
 WifiCredentials wifiCredentials;
 Rect forgetButton = {0, 0, 0, 0};
+Rect forgetLocationButton = {0, 0, 0, 0};
+String surfLocation = DEFAULT_SURF_LOCATION;
 
 void logInfo(const String &message) { Serial.printf("[INFO  %10lu ms] %s\n", millis(), message.c_str()); }
 void logError(const String &message) { Serial.printf("[ERROR %10lu ms] %s\n", millis(), message.c_str()); }
@@ -172,6 +175,59 @@ void deleteWifiCredentials() {
     logInfo("Deleted saved Wi-Fi credentials.");
   }
   wifiCredentials = WifiCredentials();
+}
+
+bool saveSurfLocation(const String &location) {
+  DynamicJsonDocument doc(256);
+  doc["location"] = location;
+
+  File f = SPIFFS.open(LOCATION_FILE, FILE_WRITE);
+  if (!f) {
+    logError("Failed to open location file for write.");
+    return false;
+  }
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write location file.");
+    f.close();
+    return false;
+  }
+  f.close();
+  logInfo("Saved surf location to SPIFFS.");
+  return true;
+}
+
+String loadSurfLocation() {
+  if (!SPIFFS.exists(LOCATION_FILE)) {
+    logInfo("No saved location file.");
+    return "";
+  }
+
+  File f = SPIFFS.open(LOCATION_FILE, FILE_READ);
+  if (!f) {
+    logError("Failed to open location file for read.");
+    return "";
+  }
+
+  DynamicJsonDocument doc(256);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    logError("Failed to parse location file.");
+    return "";
+  }
+
+  String location = doc["location"] | "";
+  if (!location.isEmpty()) logInfo("Loaded saved surf location.");
+  return location;
+}
+
+void deleteSurfLocation() {
+  if (SPIFFS.exists(LOCATION_FILE)) {
+    SPIFFS.remove(LOCATION_FILE);
+    logInfo("Deleted saved surf location.");
+  }
+  surfLocation = DEFAULT_SURF_LOCATION;
+  cachedLocation = LocationInfo();
 }
 
 bool connectWifi(const WifiCredentials &creds) {
@@ -334,6 +390,49 @@ WifiCredentials runWifiSetupTouch() {
   }
 }
 
+String runLocationSetupTouch() {
+  String location = surfLocation;
+  Rect locationButton = {12, 76, 296, 44};
+  Rect saveButton = {12, 140, 144, 44};
+  Rect skipButton = {164, 140, 144, 44};
+
+  while (true) {
+    gfx->fillScreen(BLACK);
+    gfx->setTextColor(CYAN);
+    gfx->setTextSize(2);
+    gfx->setCursor(10, 10);
+    gfx->println("Surf Location");
+
+    String shownLocation = location.isEmpty() ? String("<tap to set>") : location;
+    if (shownLocation.length() > 38) shownLocation = shownLocation.substring(0, 38) + "...";
+    drawButton(locationButton, shownLocation, BLUE, WHITE, 1);
+    drawButton(saveButton, "Save", GREEN, BLACK, 2);
+    drawButton(skipButton, "Default", 0x7BEF, BLACK, 2);
+
+    TouchPoint p = getTouchPoint();
+    if (!p.pressed) {
+      delay(30);
+      continue;
+    }
+
+    if (pointInRect(p.x, p.y, locationButton)) {
+      while (touch.touched()) delay(20);
+      location = touchKeyboardInput("Enter surf location", location, false);
+    } else if (pointInRect(p.x, p.y, saveButton) && !location.isEmpty()) {
+      while (touch.touched()) delay(20);
+      saveSurfLocation(location);
+      return location;
+    } else if (pointInRect(p.x, p.y, skipButton)) {
+      while (touch.touched()) delay(20);
+      saveSurfLocation(DEFAULT_SURF_LOCATION);
+      return DEFAULT_SURF_LOCATION;
+    }
+
+    while (touch.touched()) delay(20);
+    delay(30);
+  }
+}
+
 String urlEncode(const String &value) {
   String encoded;
   const char *hex = "0123456789ABCDEF";
@@ -417,8 +516,10 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
 }
 
 void drawForgetButton() {
-  forgetButton = {gfx->width() - 110, 8, 102, 24};
+  forgetButton = {gfx->width() - 214, 8, 102, 24};
+  forgetLocationButton = {gfx->width() - 106, 8, 102, 24};
   drawButton(forgetButton, "Forget WiFi", RED, WHITE, 1);
+  drawButton(forgetLocationButton, "Forget Loc", 0xFD20, BLACK, 1);
 }
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
@@ -490,6 +591,12 @@ bool handleMainScreenTouch() {
     delay(1200);
     return true;
   }
+  if (pointInRect(p.x, p.y, forgetLocationButton)) {
+    deleteSurfLocation();
+    showStatus("Location deleted", "Reconfigure location", 0xFD20);
+    delay(1200);
+    return true;
+  }
   return false;
 }
 
@@ -515,13 +622,18 @@ void setup() {
   }
 
   ensureWifiConnected();
+
+  surfLocation = loadSurfLocation();
+  if (surfLocation.isEmpty()) surfLocation = runLocationSetupTouch();
 }
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) ensureWifiConnected();
 
-  showStatus("Finding spot", SURF_LOCATION, CYAN);
-  if (!cachedLocation.valid) cachedLocation = fetchLocation(SURF_LOCATION);
+  if (surfLocation.isEmpty()) surfLocation = runLocationSetupTouch();
+
+  showStatus("Finding spot", surfLocation, CYAN);
+  if (!cachedLocation.valid) cachedLocation = fetchLocation(surfLocation);
   if (!cachedLocation.valid) {
     showStatus("Location failed", "Retrying...", RED);
     delay(4000);
