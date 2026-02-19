@@ -9,10 +9,16 @@
 #include <SPI.h>
 #include <XPT2046_Touchscreen.h>
 
-const char *DEFAULT_SURF_LOCATION = "Mayport, Florida, United States";
+const char *DEFAULT_LOCATION_1_NAME = "Mayport Poles";
+const float DEFAULT_LOCATION_1_LAT = 30.3970f;
+const float DEFAULT_LOCATION_1_LON = -81.4276f;
+const char *DEFAULT_LOCATION_2_NAME = "Jax Beach Pier";
+const float DEFAULT_LOCATION_2_LAT = 30.3268f;
+const float DEFAULT_LOCATION_2_LON = -81.3836f;
 const char *WIFI_FILE = "/wifi.json";
 const char *LOCATION_FILE = "/location.json";
 const char *THEME_FILE = "/theme.json";
+const char *WAVE_PREF_FILE = "/wave_pref.json";
 
 #define TFT_CS 15
 #define TFT_DC 2
@@ -87,6 +93,7 @@ struct Theme {
   uint16_t border;
   uint16_t success;
   uint16_t error;
+  uint16_t cloudColor;
 };
 
 LocationInfo cachedLocation;
@@ -94,9 +101,11 @@ WifiCredentials wifiCredentials;
 Rect forgetButton = {0, 0, 0, 0};
 Rect forgetLocationButton = {0, 0, 0, 0};
 Rect themeButton = {0, 0, 0, 0};
-String surfLocation = DEFAULT_SURF_LOCATION;
+Rect waveButton = {0, 0, 0, 0};
+String surfLocation = DEFAULT_LOCATION_1_NAME;
 int locationRetryCount = 0;
 bool darkMode = true;
+float waveHeightThreshold = 1.0f;  // Default to 1.0 feet
 
 // Dark theme colors
 Theme darkTheme = {
@@ -112,7 +121,8 @@ Theme darkTheme = {
   0x4A49,     // buttonList (dark blue-gray)
   BLACK,      // border
   0x2C40,     // success (dark green)
-  0x8000      // error (dark red)
+  0x7FFF,     // error (inverted - cyan)
+  RED         // cloudColor (red)
 };
 
 // Light theme colors
@@ -129,7 +139,8 @@ Theme lightTheme = {
   0xAD55,     // buttonList (lighter gray)
   BLACK,      // border
   GREEN,      // success
-  RED         // error
+  0x07FF,     // error (inverted - cyan)
+  RED         // cloudColor (red)
 };
 
 Theme currentTheme = darkTheme;
@@ -140,6 +151,7 @@ void logError(const String &message) { Serial.printf("[ERROR %10lu ms] %s\n", mi
 // Forward declarations
 std::vector<LocationInfo> fetchLocationMatches(const String &location, int maxResults);
 int selectLocationFromList(const std::vector<LocationInfo> &locations);
+int selectDefaultLocation();
 
 bool pointInRect(int16_t x, int16_t y, const Rect &r) {
   return x >= r.x && y >= r.y && x < (r.x + r.w) && y < (r.y + r.h);
@@ -292,6 +304,50 @@ void applyTheme() {
   currentTheme = darkMode ? darkTheme : lightTheme;
 }
 
+bool saveWaveHeightPreference(float threshold) {
+  DynamicJsonDocument doc(256);
+  doc["threshold"] = threshold;
+
+  File f = SPIFFS.open(WAVE_PREF_FILE, FILE_WRITE);
+  if (!f) {
+    logError("Failed to open wave pref file for write.");
+    return false;
+  }
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write wave pref file.");
+    f.close();
+    return false;
+  }
+  f.close();
+  logInfo("Saved wave height preference to SPIFFS.");
+  return true;
+}
+
+float loadWaveHeightPreference() {
+  if (!SPIFFS.exists(WAVE_PREF_FILE)) {
+    logInfo("No saved wave height preference.");
+    return 1.0f;  // Default
+  }
+
+  File f = SPIFFS.open(WAVE_PREF_FILE, FILE_READ);
+  if (!f) {
+    logError("Failed to open wave pref file for read.");
+    return 1.0f;
+  }
+
+  DynamicJsonDocument doc(256);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    logError("Failed to parse wave pref file.");
+    return 1.0f;
+  }
+
+  float threshold = doc["threshold"] | 1.0f;
+  logInfo(String("Loaded wave threshold: ") + String(threshold, 1));
+  return threshold;
+}
+
 bool saveSurfLocation(const LocationInfo &locInfo) {
   if (!locInfo.valid) return false;
   
@@ -354,6 +410,14 @@ void deleteSurfLocation() {
   }
   surfLocation = "";  // Clear location to force re-entry
   cachedLocation = LocationInfo();
+}
+
+void deleteWaveHeightPreference() {
+  if (SPIFFS.exists(WAVE_PREF_FILE)) {
+    SPIFFS.remove(WAVE_PREF_FILE);
+    logInfo("Deleted saved wave height preference.");
+  }
+  waveHeightThreshold = 1.0f;  // Reset to default
 }
 
 bool connectWifi(const WifiCredentials &creds) {
@@ -585,6 +649,118 @@ int selectLocationFromList(const std::vector<LocationInfo> &locations) {
   }
 }
 
+int selectDefaultLocation() {
+  while (true) {
+    gfx->fillScreen(currentTheme.background);
+    gfx->setTextColor(currentTheme.textSecondary);
+    gfx->setTextSize(2);
+    gfx->setCursor(10, 10);
+    gfx->println("Choose Default:");
+    
+    Rect loc1Btn = {10, 70, 300, 70};
+    Rect loc2Btn = {10, 160, 300, 70};
+    Rect cancelBtn = {10, 250, 300, 40};
+    
+    drawButton(loc1Btn, DEFAULT_LOCATION_1_NAME, currentTheme.buttonPrimary, currentTheme.text, 2);
+    drawButton(loc2Btn, DEFAULT_LOCATION_2_NAME, currentTheme.buttonPrimary, currentTheme.text, 2);
+    drawButton(cancelBtn, "Cancel", currentTheme.buttonDanger, currentTheme.text, 2);
+    
+    while (true) {
+      TouchPoint p = getTouchPoint();
+      if (!p.pressed) {
+        delay(50);
+        continue;
+      }
+      
+      if (pointInRect(p.x, p.y, loc1Btn)) {
+        while (touch.touched()) delay(20);
+        return 1;
+      } else if (pointInRect(p.x, p.y, loc2Btn)) {
+        while (touch.touched()) delay(20);
+        return 2;
+      } else if (pointInRect(p.x, p.y, cancelBtn)) {
+        while (touch.touched()) delay(20);
+        return 0;
+      }
+      
+      delay(50);
+    }
+  }
+}
+
+float runWaveHeightSetupTouch() {
+  float selectedThreshold = 1.0f;
+  Rect sliderArea = {40, 120, 240, 50};
+  Rect decButton = {40, 190, 60, 45};  // Decrease
+  Rect incButton = {220, 190, 60, 45};  // Increase
+  Rect saveButton = {20, 250, 140, 50};
+  Rect skipButton = {180, 250, 140, 50};
+  
+  bool needsRedraw = true;
+
+  while (true) {
+    if (needsRedraw) {
+      gfx->fillScreen(currentTheme.background);
+      gfx->setTextColor(currentTheme.textSecondary);
+      gfx->setTextSize(2);
+      gfx->setCursor(10, 10);
+      gfx->println("Wave Height Preference");
+      
+      gfx->setTextColor(currentTheme.text);
+      gfx->setTextSize(3);
+      gfx->setCursor(10, 35);
+      gfx->println("What size waves");
+      gfx->setCursor(10, 48);
+      gfx->println("make you happy?");
+      
+      // Draw slider bar
+      gfx->drawRect(sliderArea.x, sliderArea.y, sliderArea.w, sliderArea.h, currentTheme.border);
+      int barWidth = (int)((selectedThreshold - 0.5f) / 9.5f * (sliderArea.w - 4));
+      gfx->fillRect(sliderArea.x + 2, sliderArea.y + 2, barWidth, sliderArea.h - 4, currentTheme.accent);
+      
+      // Display selected value
+      gfx->setTextColor(currentTheme.text);
+      gfx->setTextSize(3);
+      gfx->setCursor(140, 140);
+      gfx->println(String(selectedThreshold, 1) + "ft");
+      
+      // Draw buttons
+      drawButton(decButton, "-", currentTheme.buttonSecondary, currentTheme.text, 2);
+      drawButton(incButton, "+", currentTheme.buttonPrimary, currentTheme.text, 2);
+      drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
+      drawButton(skipButton, "Skip", currentTheme.buttonList, currentTheme.text, 2);
+      
+      needsRedraw = false;
+    }
+
+    TouchPoint p = getTouchPoint();
+    if (!p.pressed) {
+      delay(50);
+      continue;
+    }
+
+    if (pointInRect(p.x, p.y, decButton)) {
+      selectedThreshold = max(0.5f, selectedThreshold - 0.5f);
+      while (touch.touched()) delay(20);
+      needsRedraw = true;
+    } else if (pointInRect(p.x, p.y, incButton)) {
+      selectedThreshold = min(10.0f, selectedThreshold + 0.5f);
+      while (touch.touched()) delay(20);
+      needsRedraw = true;
+    } else if (pointInRect(p.x, p.y, saveButton)) {
+      while (touch.touched()) delay(20);
+      saveWaveHeightPreference(selectedThreshold);
+      return selectedThreshold;
+    } else if (pointInRect(p.x, p.y, skipButton)) {
+      while (touch.touched()) delay(20);
+      return selectedThreshold;  // Return default
+    }
+
+    while (touch.touched()) delay(20);
+    delay(50);
+  }
+}
+
 String runLocationSetupTouch() {
   String location = "";  // Start fresh each time
   Rect locationButton = {12, 76, 296, 44};
@@ -669,25 +845,24 @@ String runLocationSetupTouch() {
       }
     } else if (pointInRect(p.x, p.y, skipButton)) {
       while (touch.touched()) delay(20);
-      // Fetch default location
-      gfx->fillScreen(currentTheme.background);
-      gfx->setTextColor(currentTheme.textSecondary);
-      gfx->setTextSize(2);
-      gfx->setCursor(10, 100);
-      gfx->println("Loading default...");
-      
-      auto matches = fetchLocationMatches(DEFAULT_SURF_LOCATION, 1);
-      if (!matches.empty()) {
-        cachedLocation = matches[0];
+      // Show default location selection
+      int selected = selectDefaultLocation();
+      if (selected == 1) {
+        cachedLocation.displayName = DEFAULT_LOCATION_1_NAME;
+        cachedLocation.latitude = DEFAULT_LOCATION_1_LAT;
+        cachedLocation.longitude = DEFAULT_LOCATION_1_LON;
+        cachedLocation.valid = true;
         saveSurfLocation(cachedLocation);
-        return matches[0].displayName;
-      } else {
-        gfx->setTextColor(currentTheme.error);
-        gfx->setCursor(10, 125);
-        gfx->println("Default location failed");
-        delay(2000);
-        needsRedraw = true;
+        return cachedLocation.displayName;
+      } else if (selected == 2) {
+        cachedLocation.displayName = DEFAULT_LOCATION_2_NAME;
+        cachedLocation.latitude = DEFAULT_LOCATION_2_LAT;
+        cachedLocation.longitude = DEFAULT_LOCATION_2_LON;
+        cachedLocation.valid = true;
+        saveSurfLocation(cachedLocation);
+        return cachedLocation.displayName;
       }
+      needsRedraw = true;
     }
 
     while (touch.touched()) delay(20);
@@ -824,14 +999,14 @@ void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   // Draw storm cloud with rain (bad surf)
   
-  // Cloud body (three overlapping circles)
-  gfx->fillCircle(x - 20, y, 18, color);
-  gfx->fillCircle(x, y - 10, 22, color);
-  gfx->fillCircle(x + 20, y, 18, color);
-  gfx->fillRect(x - 35, y, 70, 15, color);
+  // Cloud body (three overlapping circles) - always red
+  gfx->fillCircle(x - 20, y, 18, currentTheme.cloudColor);
+  gfx->fillCircle(x, y - 10, 22, currentTheme.cloudColor);
+  gfx->fillCircle(x + 20, y, 18, currentTheme.cloudColor);
+  gfx->fillRect(x - 35, y, 70, 15, currentTheme.cloudColor);
   
   // Rain drops (diagonal lines)
-  uint16_t rainColor = color;
+  uint16_t rainColor = currentTheme.cloudColor;
   for (int i = 0; i < 5; i++) {
     int16_t rx = x - 25 + i * 12;
     int16_t ry = y + 18;
@@ -856,12 +1031,28 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 }
 
 void drawForgetButton() {
-  forgetButton = {gfx->width() - 270, 8, 85, 24};
-  forgetLocationButton = {gfx->width() - 180, 8, 85, 24};
-  themeButton = {gfx->width() - 90, 8, 85, 24};
-  drawButton(forgetButton, "Forget WiFi", currentTheme.error, currentTheme.text, 1);
-  drawButton(forgetLocationButton, "Forget Loc", currentTheme.buttonWarning, currentTheme.text, 1);
-  drawButton(themeButton, darkMode ? "Light" : "Dark", currentTheme.buttonSecondary, currentTheme.text, 1);
+  // 2x2 grid layout in top right
+  int btnW = 68;
+  int btnH = 20;
+  int gap = 1;
+  int startX = gfx->width() - (btnW * 2 + gap);
+  int startY = 2;
+  
+  // Top-left: Forget WiFi
+  forgetButton = {int16_t(startX), int16_t(startY), int16_t(btnW), int16_t(btnH)};
+  drawButton(forgetButton, "WiFi", currentTheme.error, currentTheme.text, 1);
+  
+  // Top-right: Theme toggle
+  themeButton = {int16_t(startX + btnW + gap), int16_t(startY), int16_t(btnW), int16_t(btnH)};
+  drawButton(themeButton, darkMode ? "Light" : "Dark", currentTheme.text, currentTheme.background, 1);
+  
+  // Bottom-left: Forget Location
+  forgetLocationButton = {int16_t(startX), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
+  drawButton(forgetLocationButton, "Loc", currentTheme.buttonWarning, currentTheme.text, 1);
+  
+  // Bottom-right: Reset Wave
+  waveButton = {int16_t(startX + btnW + gap), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
+  drawButton(waveButton, "Wave", currentTheme.buttonDanger, currentTheme.text, 1);
 }
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
@@ -874,7 +1065,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   gfx->println("Surf spot");
 
   gfx->setTextColor(currentTheme.text);
-  gfx->setTextSize(5);
+  gfx->setTextSize(4);
   gfx->setCursor(10, 38);
   String name = location.displayName;
   // Get string before 2nd comma for shorter display
@@ -894,15 +1085,15 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   gfx->println(name);
 
   gfx->setTextColor(currentTheme.accent);
-  gfx->setCursor(10, 80);
+  gfx->setCursor(10, 85);
   gfx->println("Wave height");
   gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(9);
-  gfx->setCursor(10, 110);
+  gfx->setCursor(10, 120);
   float waveHeightFeet = forecast.waveHeight * 3.28084;
   gfx->println(String(waveHeightFeet, 1) + " ft");
 
-  bool happy = forecast.waveHeight >= 1.0f;
+  bool happy = forecast.waveHeight * 3.28084 >= waveHeightThreshold;
   uint16_t accent = happy ? currentTheme.success : currentTheme.error;
   gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(5);
@@ -943,16 +1134,17 @@ void setupTouch() {
   // No rotation - we handle mapping manually
 }
 
-bool handleMainScreenTouch() {
+// Returns: 0=no touch, 1=location-affecting button, 2=theme/display only
+int handleMainScreenTouch() {
   TouchPoint p = getTouchPoint();
-  if (!p.pressed) return false;
+  if (!p.pressed) return 0;
 
   if (pointInRect(p.x, p.y, forgetButton)) {
     deleteWifiCredentials();
     WiFi.disconnect(true, true);
     showStatus("Credentials deleted", "Reconfigure Wi-Fi", currentTheme.buttonWarning);
     delay(1200);
-    return true;
+    return 1;  // Location-affecting
   }
   if (pointInRect(p.x, p.y, forgetLocationButton)) {
     deleteSurfLocation();
@@ -960,15 +1152,22 @@ bool handleMainScreenTouch() {
     delay(1200);
     surfLocation = "";  // Ensure it's cleared
     cachedLocation = LocationInfo();
-    return true;
+    return 1;  // Location-affecting
   }
   if (pointInRect(p.x, p.y, themeButton)) {
     darkMode = !darkMode;
     applyTheme();
     saveThemePreference(darkMode);
-    return true;  // Trigger redraw
+    return 2;  // Theme only - don't clear location
   }
-  return false;
+  if (pointInRect(p.x, p.y, waveButton)) {
+    deleteWaveHeightPreference();
+    showStatus("Wave pref reset", "Reconfigure wave height", currentTheme.buttonWarning);
+    delay(1200);
+    waveHeightThreshold = runWaveHeightSetupTouch();
+    return 2;  // Display only - don't clear location, just redraw
+  }
+  return 0;
 }
 
 void ensureWifiConnected() {
@@ -1005,6 +1204,12 @@ void setup() {
   } else {
     surfLocation = cachedLocation.displayName;
     logInfo("Using saved location: " + surfLocation);
+  }
+  
+  // Load wave height preference (will prompt if not saved)
+  waveHeightThreshold = loadWaveHeightPreference();
+  if (waveHeightThreshold == 1.0f && !SPIFFS.exists(WAVE_PREF_FILE)) {
+    waveHeightThreshold = runWaveHeightSetupTouch();
   }
 }
 
@@ -1048,11 +1253,16 @@ void loop() {
 
   uint32_t start = millis();
   while (millis() - start < REFRESH_INTERVAL_MS) {
-    if (handleMainScreenTouch()) {
+    int touchResult = handleMainScreenTouch();
+    if (touchResult == 1) {
+      // Location-affecting button: WiFi, Location, or Wave
       ensureWifiConnected();
       cachedLocation = LocationInfo();
-      locationRetryCount = 0;  // Reset retry count when user manually changes location
+      locationRetryCount = 0;
       break;
+    } else if (touchResult == 2) {
+      // Theme button: just redraw with new theme, keep location
+      drawForecast(cachedLocation, forecast);
     }
     delay(50);
   }
