@@ -3,35 +3,38 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Arduino_GFX_Library.h>
+#include <SPIFFS.h>
+#include <FS.h>
+#include <SPI.h>
+#include <XPT2046_Touchscreen.h>
 
-// ---------- User config ----------
-const char *WIFI_SSID = "The neighbors wifi";
-const char *WIFI_PASS = "Theneighborspassword";
 const char *SURF_LOCATION = "Huntington Beach, CA";
-// ----------------------------------
+const char *WIFI_FILE = "/wifi.json";
 
-// ---------- Pin definitions for ESP32 + ILI9341 ----------
-// ESP32-2432S028R (CYD 2.8") common pin configuration
-#define TFT_CS    15
-#define TFT_DC    2
-#define TFT_RST   -1  // Use -1 if tied to ESP32 EN/reset
-#define TFT_BL    27  // Backlight pin — try 21, 27, or -1
-#define TFT_MOSI  13
-#define TFT_MISO  12
-#define TFT_SCLK  14
-// ---------------------------------------------------------
+#define TFT_CS 15
+#define TFT_DC 2
+#define TFT_RST -1
+#define TFT_BL 27
+#define TFT_MOSI 13
+#define TFT_MISO 12
+#define TFT_SCLK 14
+
+#define TOUCH_CS 33
+#define TOUCH_IRQ 36
+
+// Touch calibration values for CYD displays (may need minor tuning per panel)
+#define TOUCH_MIN_X 240
+#define TOUCH_MAX_X 3860
+#define TOUCH_MIN_Y 280
+#define TOUCH_MAX_Y 3860
 
 static const uint32_t REFRESH_INTERVAL_MS = 1800000; // 30 minutes
-static const char *GEOCODE_URL =
-    "https://geocoding-api.open-meteo.com/v1/search";
+static const char *GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 static const char *MARINE_URL = "https://marine-api.open-meteo.com/v1/marine";
 
-// Create display bus and GFX objects
-// 2.8" 320x240 display - using ILI9341 driver (common for ESP32-2432S028R CYD)
-Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI,
-                                            TFT_MISO);
-Arduino_GFX *gfx = new Arduino_ILI9341(bus, TFT_RST, 0 /* rotation */,
-                                       false /* IPS */);
+Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI, TFT_MISO);
+Arduino_GFX *gfx = new Arduino_ILI9341(bus, TFT_RST, 1 /* landscape */, false /* IPS */);
+XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
 struct LocationInfo {
   float latitude = 0.0f;
@@ -48,106 +51,297 @@ struct SurfForecast {
   bool valid = false;
 };
 
+struct WifiCredentials {
+  String ssid;
+  String password;
+  bool valid = false;
+};
+
+struct TouchPoint {
+  int16_t x = -1;
+  int16_t y = -1;
+  bool pressed = false;
+};
+
+struct Rect {
+  int16_t x;
+  int16_t y;
+  int16_t w;
+  int16_t h;
+};
+
 LocationInfo cachedLocation;
-String wifiSsidInput;
-String wifiPassInput;
+WifiCredentials wifiCredentials;
+Rect forgetButton = {0, 0, 0, 0};
 
-void logInfo(const String &message) {
-  Serial.printf("[INFO  %10lu ms] %s\n", millis(), message.c_str());
+void logInfo(const String &message) { Serial.printf("[INFO  %10lu ms] %s\n", millis(), message.c_str()); }
+void logError(const String &message) { Serial.printf("[ERROR %10lu ms] %s\n", millis(), message.c_str()); }
+
+bool pointInRect(int16_t x, int16_t y, const Rect &r) {
+  return x >= r.x && y >= r.y && x < (r.x + r.w) && y < (r.y + r.h);
 }
 
-void logError(const String &message) {
-  Serial.printf("[ERROR %10lu ms] %s\n", millis(), message.c_str());
+TouchPoint getTouchPoint() {
+  TouchPoint p;
+  if (!touch.touched()) return p;
+
+  TS_Point raw = touch.getPoint();
+  p.x = map(raw.x, TOUCH_MIN_X, TOUCH_MAX_X, 0, gfx->width());
+  p.y = map(raw.y, TOUCH_MIN_Y, TOUCH_MAX_Y, 0, gfx->height());
+  p.x = constrain(p.x, 0, gfx->width() - 1);
+  p.y = constrain(p.y, 0, gfx->height() - 1);
+  p.pressed = true;
+  return p;
 }
 
-void showStatus(const String &line1, const String &line2 = "",
-                uint16_t color = WHITE) {
+void drawButton(const Rect &r, const String &label, uint16_t bg, uint16_t fg = BLACK, uint8_t textSize = 2) {
+  gfx->fillRoundRect(r.x, r.y, r.w, r.h, 6, bg);
+  gfx->drawRoundRect(r.x, r.y, r.w, r.h, 6, WHITE);
+  gfx->setTextColor(fg);
+  gfx->setTextSize(textSize);
+  int16_t tx = r.x + 8;
+  int16_t ty = r.y + (r.h / 2) - 8;
+  gfx->setCursor(tx, ty);
+  gfx->println(label);
+}
+
+void showStatus(const String &line1, const String &line2 = "", uint16_t color = WHITE) {
   gfx->fillScreen(BLACK);
   gfx->setTextColor(color);
-  gfx->setTextSize(3);
-  gfx->setCursor(20, 40);
+  gfx->setTextSize(2);
+  gfx->setCursor(12, 24);
   gfx->println(line1);
   if (!line2.isEmpty()) {
-    gfx->setCursor(20, 90);
+    gfx->setTextColor(WHITE);
+    gfx->setCursor(12, 56);
     gfx->println(line2);
   }
 }
 
-String readLineFromSerial(uint32_t timeoutMs) {
-  String input;
-  uint32_t start = millis();
-  while (millis() - start < timeoutMs) {
-    while (Serial.available() > 0) {
-      char c = static_cast<char>(Serial.read());
-      if (c == '\r') {
+bool saveWifiCredentials(const WifiCredentials &creds) {
+  DynamicJsonDocument doc(512);
+  doc["ssid"] = creds.ssid;
+  doc["password"] = creds.password;
+
+  File f = SPIFFS.open(WIFI_FILE, FILE_WRITE);
+  if (!f) {
+    logError("Failed to open wifi file for write.");
+    return false;
+  }
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write wifi file.");
+    f.close();
+    return false;
+  }
+  f.close();
+  logInfo("Saved Wi-Fi credentials to SPIFFS.");
+  return true;
+}
+
+WifiCredentials loadWifiCredentials() {
+  WifiCredentials creds;
+  if (!SPIFFS.exists(WIFI_FILE)) {
+    logInfo("No saved Wi-Fi credentials file.");
+    return creds;
+  }
+
+  File f = SPIFFS.open(WIFI_FILE, FILE_READ);
+  if (!f) {
+    logError("Failed to open wifi file for read.");
+    return creds;
+  }
+
+  DynamicJsonDocument doc(512);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    logError("Failed to parse wifi file.");
+    return creds;
+  }
+
+  creds.ssid = doc["ssid"] | "";
+  creds.password = doc["password"] | "";
+  creds.valid = !creds.ssid.isEmpty();
+  if (creds.valid) logInfo("Loaded saved Wi-Fi credentials.");
+  return creds;
+}
+
+void deleteWifiCredentials() {
+  if (SPIFFS.exists(WIFI_FILE)) {
+    SPIFFS.remove(WIFI_FILE);
+    logInfo("Deleted saved Wi-Fi credentials.");
+  }
+  wifiCredentials = WifiCredentials();
+}
+
+bool connectWifi(const WifiCredentials &creds) {
+  if (!creds.valid) return false;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(creds.ssid.c_str(), creds.password.c_str());
+  showStatus("Connecting Wi-Fi", creds.ssid, CYAN);
+
+  for (uint8_t attempt = 0; attempt < 60; ++attempt) {
+    if (WiFi.status() == WL_CONNECTED) {
+      showStatus("Wi-Fi connected", WiFi.localIP().toString(), GREEN);
+      logInfo("Connected to Wi-Fi " + creds.ssid);
+      delay(1000);
+      return true;
+    }
+    delay(500);
+  }
+
+  logError("Wi-Fi connection failed for SSID: " + creds.ssid);
+  showStatus("Wi-Fi failed", "Tap to re-enter", RED);
+  return false;
+}
+
+String touchKeyboardInput(const String &title, const String &initial, bool secret = false) {
+  String value = initial;
+  const char *rows[] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM@._-"};
+  Rect keyRects[44];
+  String keyLabels[44];
+  int keyCount = 0;
+
+  while (true) {
+    gfx->fillScreen(BLACK);
+    gfx->setTextColor(CYAN);
+    gfx->setTextSize(2);
+    gfx->setCursor(8, 8);
+    gfx->println(title);
+
+    gfx->drawRect(8, 30, gfx->width() - 16, 28, WHITE);
+    gfx->setCursor(12, 38);
+    gfx->setTextColor(WHITE);
+    String shown = value;
+    if (secret) {
+      shown = "";
+      for (size_t i = 0; i < value.length(); ++i) shown += '*';
+    }
+    if (shown.length() > 28) shown = shown.substring(shown.length() - 28);
+    gfx->println(shown);
+
+    keyCount = 0;
+    int y = 66;
+    for (int r = 0; r < 4; ++r) {
+      int len = strlen(rows[r]);
+      int keyW = (gfx->width() - 16 - (len - 1) * 2) / len;
+      for (int i = 0; i < len; ++i) {
+        Rect kr = {int16_t(8 + i * (keyW + 2)), int16_t(y), int16_t(keyW), int16_t(24)};
+        String label = String(rows[r][i]);
+        drawButton(kr, label, 0x7BEF, WHITE, 1);
+        keyRects[keyCount] = kr;
+        keyLabels[keyCount] = label;
+        keyCount++;
+      }
+      y += 28;
+    }
+
+    Rect back = {8, 180, 74, 26};
+    Rect clear = {88, 180, 74, 26};
+    Rect space = {168, 180, 74, 26};
+    Rect done = {248, 180, 64, 26};
+    drawButton(back, "<-", 0xFD20, BLACK, 1);
+    drawButton(clear, "CLR", RED, WHITE, 1);
+    drawButton(space, "SPC", BLUE, WHITE, 1);
+    drawButton(done, "OK", GREEN, BLACK, 1);
+
+    while (true) {
+      TouchPoint p = getTouchPoint();
+      if (!p.pressed) {
+        delay(20);
         continue;
       }
-      if (c == '\n') {
-        input.trim();
-        return input;
+
+      for (int i = 0; i < keyCount; ++i) {
+        if (pointInRect(p.x, p.y, keyRects[i])) {
+          value += keyLabels[i];
+          while (touch.touched()) delay(20);
+          goto redraw;
+        }
       }
-      input += c;
+
+      if (pointInRect(p.x, p.y, back) && !value.isEmpty()) {
+        value.remove(value.length() - 1);
+        while (touch.touched()) delay(20);
+        goto redraw;
+      }
+      if (pointInRect(p.x, p.y, clear)) {
+        value = "";
+        while (touch.touched()) delay(20);
+        goto redraw;
+      }
+      if (pointInRect(p.x, p.y, space)) {
+        value += " ";
+        while (touch.touched()) delay(20);
+        goto redraw;
+      }
+      if (pointInRect(p.x, p.y, done)) {
+        while (touch.touched()) delay(20);
+        return value;
+      }
+
+      delay(20);
     }
-    delay(10);
+  redraw:
+    delay(20);
   }
-  input.trim();
-  return input;
 }
 
-void promptForWifi() {
-  Serial.println();
-  Serial.println("Enter Wi-Fi SSID (press Enter to keep default):");
-  showStatus("Wi-Fi setup", "Enter SSID", CYAN);
-  String ssid = readLineFromSerial(20000);
-  if (!ssid.isEmpty()) {
-    wifiSsidInput = ssid;
-  }
+WifiCredentials runWifiSetupTouch() {
+  WifiCredentials creds;
+  Rect ssidButton = {12, 64, 296, 36};
+  Rect passButton = {12, 116, 296, 36};
+  Rect connectButton = {12, 172, 296, 44};
 
-  Serial.println("Enter Wi-Fi password (press Enter to keep default):");
-  showStatus("Wi-Fi setup", "Enter password", CYAN);
-  String pass = readLineFromSerial(20000);
-  if (!pass.isEmpty()) {
-    wifiPassInput = pass;
-  }
-}
+  while (true) {
+    gfx->fillScreen(BLACK);
+    gfx->setTextColor(CYAN);
+    gfx->setTextSize(2);
+    gfx->setCursor(10, 10);
+    gfx->println("Wi-Fi Setup");
 
-void connectWifi() {
-  const char *ssid = wifiSsidInput.isEmpty() ? WIFI_SSID : wifiSsidInput.c_str();
-  const char *pass = wifiPassInput.isEmpty() ? WIFI_PASS : wifiPassInput.c_str();
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  showStatus("Connecting to Wi-Fi", ssid, CYAN);
-  logInfo("Connecting to Wi-Fi SSID: " + String(ssid));
-  uint8_t retries = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    ++retries;
-    if (retries % 10 == 0) {
-      logInfo("Still connecting... attempt " + String(retries));
-      showStatus("Connecting...", "Attempt " + String(retries), CYAN);
+    drawButton(ssidButton, "SSID: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), BLUE, WHITE, 1);
+    String masked = "<tap to set>";
+    if (!creds.password.isEmpty()) {
+      masked = "";
+      for (size_t i = 0; i < creds.password.length(); ++i) masked += '*';
     }
-    if (retries >= 60) {
-      logError("Wi-Fi connection failed after 60 attempts.");
-      showStatus("Wi-Fi connection failed", "Check credentials", RED);
-      return;
+    drawButton(passButton, "PASS: " + masked, BLUE, WHITE, 1);
+    drawButton(connectButton, "Save + Connect", GREEN, BLACK, 2);
+
+    TouchPoint p = getTouchPoint();
+    if (!p.pressed) {
+      delay(30);
+      continue;
     }
+
+    if (pointInRect(p.x, p.y, ssidButton)) {
+      while (touch.touched()) delay(20);
+      creds.ssid = touchKeyboardInput("Enter SSID", creds.ssid, false);
+    } else if (pointInRect(p.x, p.y, passButton)) {
+      while (touch.touched()) delay(20);
+      creds.password = touchKeyboardInput("Enter Password", creds.password, true);
+    } else if (pointInRect(p.x, p.y, connectButton) && !creds.ssid.isEmpty()) {
+      while (touch.touched()) delay(20);
+      creds.valid = true;
+      saveWifiCredentials(creds);
+      return creds;
+    }
+
+    while (touch.touched()) delay(20);
+    delay(30);
   }
-  logInfo("Wi-Fi connected. IP: " + WiFi.localIP().toString());
-  showStatus("Wi-Fi connected", WiFi.localIP().toString(), GREEN);
 }
 
 String urlEncode(const String &value) {
   String encoded;
-  encoded.reserve(value.length());
   const char *hex = "0123456789ABCDEF";
   for (size_t i = 0; i < value.length(); ++i) {
     char c = value.charAt(i);
-    if (isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' ||
-        c == '.' || c == '~') {
-      encoded += c;
-    } else if (c == ' ') {
-      encoded += "%20";
-    } else {
+    if (isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') encoded += c;
+    else if (c == ' ') encoded += "%20";
+    else {
       encoded += '%';
       encoded += hex[(c >> 4) & 0x0F];
       encoded += hex[c & 0x0F];
@@ -158,263 +352,199 @@ String urlEncode(const String &value) {
 
 LocationInfo fetchLocation(const String &location) {
   LocationInfo info;
-  if (WiFi.status() != WL_CONNECTED) {
-    logError("Wi-Fi not connected.");
-    return info;
-  }
+  if (WiFi.status() != WL_CONNECTED) return info;
 
   HTTPClient http;
-  String url = String(GEOCODE_URL) + "?name=" + urlEncode(location) +
-               "&count=1&language=en&format=json";
-  logInfo("Geocoding location " + location + " via " + url);
+  String url = String(GEOCODE_URL) + "?name=" + urlEncode(location) + "&count=1&language=en&format=json";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.addHeader("User-Agent", "DadSurfChecker/1.0");
-  http.addHeader("Accept-Encoding", "identity");
   http.begin(url);
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
-    logError("HTTP error code: " + String(code));
     http.end();
     return info;
   }
 
-  const size_t capacity = 12 * 1024;
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-  DynamicJsonDocument doc(capacity);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+  DynamicJsonDocument doc(12 * 1024);
   String payload = http.getString();
   http.end();
-  if (payload.isEmpty()) {
-    logError("Empty response payload.");
-    return info;
-  }
-
-  DeserializationError err = deserializeJson(doc, payload);
-  if (err) {
-    String preview = payload.substring(0, 120);
-    logError("JSON parse failed: " + String(err.c_str()));
-    logError("Response preview: " + preview);
-    return info;
-  }
+  if (deserializeJson(doc, payload)) return info;
 
   JsonObject first = doc["results"][0];
-  if (first.isNull()) {
-    logError("No geocoding results.");
-    return info;
-  }
+  if (first.isNull()) return info;
 
   info.latitude = first["latitude"] | 0.0f;
   info.longitude = first["longitude"] | 0.0f;
-  String name = first["name"] | "";
+  info.displayName = String((const char *)first["name"]);
   String admin1 = first["admin1"] | "";
   String country = first["country"] | "";
-  info.displayName = name;
-  if (!admin1.isEmpty()) {
-    info.displayName += ", " + admin1;
-  }
-  if (!country.isEmpty()) {
-    info.displayName += ", " + country;
-  }
+  if (!admin1.isEmpty()) info.displayName += ", " + admin1;
+  if (!country.isEmpty()) info.displayName += ", " + country;
   info.valid = true;
-  logInfo("Geocoded location to " + info.displayName + " (" +
-          String(info.latitude, 4) + ", " + String(info.longitude, 4) +
-          ")");
   return info;
 }
 
 SurfForecast fetchSurfForecast(float latitude, float longitude) {
   SurfForecast forecast;
-  if (WiFi.status() != WL_CONNECTED) {
-    logError("Wi-Fi not connected.");
-    return forecast;
-  }
+  if (WiFi.status() != WL_CONNECTED) return forecast;
 
   HTTPClient http;
-  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) +
-               "&longitude=" + String(longitude, 4) +
-               "&hourly=wave_height,wave_period,wave_direction&timezone=auto";
-  logInfo("Requesting surf forecast via " + url);
+  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wave_height,wave_period,wave_direction&timezone=auto";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.addHeader("User-Agent", "DadSurfChecker/1.0");
-  http.addHeader("Accept-Encoding", "identity");
   http.begin(url);
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
-    logError("HTTP error code: " + String(code));
     http.end();
     return forecast;
   }
 
-  const size_t capacity = 24 * 1024;
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-  DynamicJsonDocument doc(capacity);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+  DynamicJsonDocument doc(24 * 1024);
   String payload = http.getString();
   http.end();
-  if (payload.isEmpty()) {
-    logError("Empty response payload.");
-    return forecast;
-  }
-
-  DeserializationError err = deserializeJson(doc, payload);
-  if (err) {
-    String preview = payload.substring(0, 120);
-    logError("JSON parse failed: " + String(err.c_str()));
-    logError("Response preview: " + preview);
-    return forecast;
-  }
+  if (deserializeJson(doc, payload)) return forecast;
 
   JsonArray times = doc["hourly"]["time"];
   JsonArray heights = doc["hourly"]["wave_height"];
   JsonArray periods = doc["hourly"]["wave_period"];
   JsonArray directions = doc["hourly"]["wave_direction"];
-  if (times.isNull() || heights.isNull() || periods.isNull() ||
-      directions.isNull() || times.size() == 0) {
-    logError("Missing hourly forecast data.");
-    return forecast;
-  }
+  if (times.isNull() || heights.isNull() || periods.isNull() || directions.isNull() || times.size() == 0) return forecast;
 
   forecast.timeLabel = String(times[0].as<const char *>());
   forecast.waveHeight = heights[0] | 0.0f;
   forecast.wavePeriod = periods[0] | 0.0f;
   forecast.waveDirection = directions[0] | 0.0f;
   forecast.valid = true;
-  logInfo("Forecast waveHeight=" + String(forecast.waveHeight, 2) +
-          "m period=" + String(forecast.wavePeriod, 1) +
-          "s direction=" + String(forecast.waveDirection, 0));
   return forecast;
+}
+
+void drawForgetButton() {
+  forgetButton = {gfx->width() - 110, 8, 102, 24};
+  drawButton(forgetButton, "Forget WiFi", RED, WHITE, 1);
 }
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   gfx->fillScreen(BLACK);
+  int16_t w = gfx->width();
 
-  int16_t w = gfx->width();   // 480 in landscape
-  int16_t h = gfx->height();  // 320 in landscape
-
-  // Location (top left)
   gfx->setTextColor(CYAN);
-  gfx->setTextSize(3);
-  gfx->setCursor(20, 20);
+  gfx->setTextSize(2);
+  gfx->setCursor(10, 12);
   gfx->println("Surf spot");
-  gfx->setTextColor(WHITE);
-  gfx->setTextSize(3);
-  gfx->setCursor(20, 55);
-  gfx->println(location.displayName);
 
-  // Wave height (center, large)
+  gfx->setTextColor(WHITE);
+  gfx->setTextSize(2);
+  gfx->setCursor(10, 34);
+  String name = location.displayName;
+  if (name.length() > 24) name = name.substring(0, 24) + "...";
+  gfx->println(name);
+
   gfx->setTextColor(YELLOW);
-  gfx->setTextSize(3);
-  gfx->setCursor(20, 130);
+  gfx->setCursor(10, 72);
   gfx->println("Wave height");
   gfx->setTextColor(WHITE);
-  gfx->setTextSize(5);
-  gfx->setCursor(20, 170);
-  String heightStr = String(forecast.waveHeight, 2) + " m";
-  gfx->println(heightStr);
+  gfx->setTextSize(4);
+  gfx->setCursor(10, 94);
+  gfx->println(String(forecast.waveHeight, 2) + " m");
 
-  // Details (bottom)
   bool happy = forecast.waveHeight >= 1.0f;
   uint16_t accent = happy ? GREEN : RED;
   gfx->setTextColor(WHITE);
-  gfx->setTextSize(3);
-  gfx->setCursor(20, 250);
+  gfx->setTextSize(2);
+  gfx->setCursor(10, 158);
   gfx->println("Period / Direction");
   gfx->setTextColor(accent);
-  gfx->setTextSize(4);
-  gfx->setCursor(20, 285);
-  String detailStr = String(forecast.wavePeriod, 1) + "s ";
-  detailStr += String(forecast.waveDirection, 0) + (char)248 + " ";
-  detailStr += forecast.timeLabel.substring(11, 16);
+  gfx->setCursor(10, 182);
+  String detailStr = String(forecast.wavePeriod, 1) + "s  " + String(forecast.waveDirection, 0) + (char)248;
   gfx->println(detailStr);
 
-  // Large smiley (right side)
-  gfx->setTextSize(8);
-  gfx->setCursor(w - 120, 100);
+  gfx->setTextSize(6);
+  gfx->setCursor(w - 90, 120);
+  gfx->setTextColor(accent);
   gfx->println(happy ? ":)" : ":(");
-}
 
-void showError(const String &message) {
-  logError(message);
-  showStatus("Error:", message, RED);
+  drawForgetButton();
 }
 
 void setupDisplay() {
-  logInfo("Display init starting...");
-
-  // Initialize backlight
 #if TFT_BL >= 0
-  logInfo("Backlight pin TFT_BL=" + String(TFT_BL));
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
-  logInfo("Backlight set HIGH");
 #endif
-
-  if (!gfx->begin()) {
-    logError("gfx->begin() failed!");
-    return;
-  }
-  logInfo("Display init done. Width=" + String(gfx->width()) +
-          " Height=" + String(gfx->height()));
-
-  gfx->setRotation(1); // landscape
-  logInfo("Rotation set to 1 (landscape). Width=" + String(gfx->width()) +
-          " Height=" + String(gfx->height()));
-
-  // ---------- Diagnostic color cycle ----------
-  logInfo("Running display color diagnostics...");
-  const uint16_t testColors[] = {RED, GREEN, BLUE, WHITE, BLACK};
-  const char *colorNames[] = {"RED", "GREEN", "BLUE", "WHITE", "BLACK"};
-  for (int i = 0; i < 5; ++i) {
-    gfx->fillScreen(testColors[i]);
-    logInfo(String("Screen filled: ") + colorNames[i]);
-    delay(400);
-  }
-  logInfo("Color diagnostics done.");
-  // --------------------------------------------
-
+  gfx->begin();
+  gfx->setRotation(1);
   gfx->fillScreen(BLACK);
-  gfx->setTextColor(WHITE);
-  gfx->setTextSize(2);
-  gfx->setCursor(10, 10);
-  gfx->println("Booting...");
+}
+
+void setupTouch() {
+  touch.begin();
+  touch.setRotation(1);
+}
+
+bool handleMainScreenTouch() {
+  TouchPoint p = getTouchPoint();
+  if (!p.pressed) return false;
+
+  if (pointInRect(p.x, p.y, forgetButton)) {
+    deleteWifiCredentials();
+    WiFi.disconnect(true, true);
+    showStatus("Credentials deleted", "Reconfigure Wi-Fi", 0xFD20);
+    delay(1200);
+    return true;
+  }
+  return false;
+}
+
+void ensureWifiConnected() {
+  wifiCredentials = loadWifiCredentials();
+  if (!wifiCredentials.valid || !connectWifi(wifiCredentials)) {
+    while (true) {
+      wifiCredentials = runWifiSetupTouch();
+      if (connectWifi(wifiCredentials)) break;
+    }
+  }
 }
 
 void setup() {
   Serial.begin(115200);
   delay(200);
+
   setupDisplay();
-  promptForWifi();
-  connectWifi();
+  setupTouch();
+  if (!SPIFFS.begin(true)) {
+    showStatus("SPIFFS failed", "Restart device", RED);
+    while (true) delay(1000);
+  }
+
+  ensureWifiConnected();
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) ensureWifiConnected();
+
   showStatus("Finding spot", SURF_LOCATION, CYAN);
+  if (!cachedLocation.valid) cachedLocation = fetchLocation(SURF_LOCATION);
   if (!cachedLocation.valid) {
-    cachedLocation = fetchLocation(SURF_LOCATION);
-  }
-  if (!cachedLocation.valid) {
-    showError("Location lookup failed.");
-    delay(REFRESH_INTERVAL_MS);
+    showStatus("Location failed", "Retrying...", RED);
+    delay(4000);
     return;
   }
 
   showStatus("Fetching surf", cachedLocation.displayName, CYAN);
-  SurfForecast forecast =
-      fetchSurfForecast(cachedLocation.latitude, cachedLocation.longitude);
-  if (forecast.valid) {
-    drawForecast(cachedLocation, forecast);
-  } else {
-    showError("Fetch failed; retrying.");
+  SurfForecast forecast = fetchSurfForecast(cachedLocation.latitude, cachedLocation.longitude);
+  if (!forecast.valid) {
+    showStatus("Fetch failed", "Retrying...", RED);
+    delay(4000);
+    return;
   }
-  delay(REFRESH_INTERVAL_MS);
+
+  drawForecast(cachedLocation, forecast);
+
+  uint32_t start = millis();
+  while (millis() - start < REFRESH_INTERVAL_MS) {
+    if (handleMainScreenTouch()) {
+      ensureWifiConnected();
+      cachedLocation = LocationInfo();
+      break;
+    }
+    delay(50);
+  }
 }
