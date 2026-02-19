@@ -89,11 +89,17 @@ TouchPoint getTouchPoint() {
   if (!touch.touched()) return p;
 
   TS_Point raw = touch.getPoint();
-  p.x = map(raw.x, TOUCH_MIN_X, TOUCH_MAX_X, 0, gfx->width());
-  p.y = map(raw.y, TOUCH_MIN_Y, TOUCH_MAX_Y, 0, gfx->height());
+  
+  // Inverted mapping on both axes
+  p.x = map(raw.x, TOUCH_MIN_X, TOUCH_MAX_X, gfx->width(), 0);
+  p.y = map(raw.y, TOUCH_MIN_Y, TOUCH_MAX_Y, gfx->height(), 0);
   p.x = constrain(p.x, 0, gfx->width() - 1);
   p.y = constrain(p.y, 0, gfx->height() - 1);
   p.pressed = true;
+  
+  // Debug output
+  Serial.printf("Touch: raw(%d,%d) -> mapped(%d,%d)\n", raw.x, raw.y, p.x, p.y);
+  
   return p;
 }
 
@@ -305,9 +311,13 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
     while (true) {
       TouchPoint p = getTouchPoint();
       if (!p.pressed) {
-        delay(20);
+        delay(50);
         continue;
       }
+      
+      // Draw touch indicator for debugging
+      gfx->fillCircle(p.x, p.y, 3, RED);
+      delay(100);  // Show indicator briefly
 
       for (int i = 0; i < keyCount; ++i) {
         if (pointInRect(p.x, p.y, keyRects[i])) {
@@ -349,35 +359,42 @@ WifiCredentials runWifiSetupTouch() {
   Rect ssidButton = {12, 64, 296, 36};
   Rect passButton = {12, 116, 296, 36};
   Rect connectButton = {12, 172, 296, 44};
+  
+  bool needsRedraw = true;
 
   while (true) {
-    gfx->fillScreen(BLACK);
-    gfx->setTextColor(CYAN);
-    gfx->setTextSize(2);
-    gfx->setCursor(10, 10);
-    gfx->println("Wi-Fi Setup");
+    if (needsRedraw) {
+      gfx->fillScreen(BLACK);
+      gfx->setTextColor(CYAN);
+      gfx->setTextSize(2);
+      gfx->setCursor(10, 10);
+      gfx->println("Wi-Fi Setup");
 
-    drawButton(ssidButton, "SSID: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), BLUE, WHITE, 1);
-    String masked = "<tap to set>";
-    if (!creds.password.isEmpty()) {
-      masked = "";
-      for (size_t i = 0; i < creds.password.length(); ++i) masked += '*';
+      drawButton(ssidButton, "SSID: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), BLUE, WHITE, 1);
+      String masked = "<tap to set>";
+      if (!creds.password.isEmpty()) {
+        masked = "";
+        for (size_t i = 0; i < creds.password.length(); ++i) masked += '*';
+      }
+      drawButton(passButton, "PASS: " + masked, BLUE, WHITE, 1);
+      drawButton(connectButton, "Save + Connect", GREEN, BLACK, 2);
+      needsRedraw = false;
     }
-    drawButton(passButton, "PASS: " + masked, BLUE, WHITE, 1);
-    drawButton(connectButton, "Save + Connect", GREEN, BLACK, 2);
 
     TouchPoint p = getTouchPoint();
     if (!p.pressed) {
-      delay(30);
+      delay(50);
       continue;
     }
 
     if (pointInRect(p.x, p.y, ssidButton)) {
       while (touch.touched()) delay(20);
       creds.ssid = touchKeyboardInput("Enter SSID", creds.ssid, false);
+      needsRedraw = true;
     } else if (pointInRect(p.x, p.y, passButton)) {
       while (touch.touched()) delay(20);
       creds.password = touchKeyboardInput("Enter Password", creds.password, true);
+      needsRedraw = true;
     } else if (pointInRect(p.x, p.y, connectButton) && !creds.ssid.isEmpty()) {
       while (touch.touched()) delay(20);
       creds.valid = true;
@@ -386,7 +403,7 @@ WifiCredentials runWifiSetupTouch() {
     }
 
     while (touch.touched()) delay(20);
-    delay(30);
+    delay(50);
   }
 }
 
@@ -395,29 +412,35 @@ String runLocationSetupTouch() {
   Rect locationButton = {12, 76, 296, 44};
   Rect saveButton = {12, 140, 144, 44};
   Rect skipButton = {164, 140, 144, 44};
+  
+  bool needsRedraw = true;
 
   while (true) {
-    gfx->fillScreen(BLACK);
-    gfx->setTextColor(CYAN);
-    gfx->setTextSize(2);
-    gfx->setCursor(10, 10);
-    gfx->println("Surf Location");
+    if (needsRedraw) {
+      gfx->fillScreen(BLACK);
+      gfx->setTextColor(CYAN);
+      gfx->setTextSize(2);
+      gfx->setCursor(10, 10);
+      gfx->println("Surf Location");
 
-    String shownLocation = location.isEmpty() ? String("<tap to set>") : location;
-    if (shownLocation.length() > 38) shownLocation = shownLocation.substring(0, 38) + "...";
-    drawButton(locationButton, shownLocation, BLUE, WHITE, 1);
-    drawButton(saveButton, "Save", GREEN, BLACK, 2);
-    drawButton(skipButton, "Default", 0x7BEF, BLACK, 2);
+      String shownLocation = location.isEmpty() ? String("<tap to set>") : location;
+      if (shownLocation.length() > 38) shownLocation = shownLocation.substring(0, 38) + "...";
+      drawButton(locationButton, shownLocation, BLUE, WHITE, 1);
+      drawButton(saveButton, "Save", GREEN, BLACK, 2);
+      drawButton(skipButton, "Default", 0x7BEF, BLACK, 2);
+      needsRedraw = false;
+    }
 
     TouchPoint p = getTouchPoint();
     if (!p.pressed) {
-      delay(30);
+      delay(50);
       continue;
     }
 
     if (pointInRect(p.x, p.y, locationButton)) {
       while (touch.touched()) delay(20);
       location = touchKeyboardInput("Enter surf location", location, false);
+      needsRedraw = true;
     } else if (pointInRect(p.x, p.y, saveButton) && !location.isEmpty()) {
       while (touch.touched()) delay(20);
       saveSurfLocation(location);
@@ -429,7 +452,7 @@ String runLocationSetupTouch() {
     }
 
     while (touch.touched()) delay(20);
-    delay(30);
+    delay(50);
   }
 }
 
@@ -568,16 +591,21 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
 void setupDisplay() {
 #if TFT_BL >= 0
   pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, HIGH);
+  digitalWrite(TFT_BL, LOW);  // Keep backlight off during init
 #endif
   gfx->begin();
   gfx->setRotation(1);
   gfx->fillScreen(BLACK);
+#if TFT_BL >= 0
+  digitalWrite(TFT_BL, HIGH);  // Turn on backlight after init
+#endif
 }
 
 void setupTouch() {
+  // Initialize SPI bus for touchscreen (shares same pins as display)
+  SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TOUCH_CS);
   touch.begin();
-  touch.setRotation(1);
+  // No rotation - we handle mapping manually
 }
 
 bool handleMainScreenTouch() {
