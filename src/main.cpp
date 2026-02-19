@@ -728,7 +728,7 @@ float runWaveHeightSetupTouch() {
       drawButton(decButton, "-", currentTheme.buttonSecondary, currentTheme.text, 2);
       drawButton(incButton, "+", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
-      drawButton(skipButton, "Skip", currentTheme.buttonList, currentTheme.text, 2);
+      drawButton(skipButton, "3 ft", currentTheme.buttonList, currentTheme.text, 2);
       
       needsRedraw = false;
     }
