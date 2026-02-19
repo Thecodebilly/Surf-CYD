@@ -12,6 +12,7 @@
 const char *DEFAULT_SURF_LOCATION = "Mayport, Florida, United States";
 const char *WIFI_FILE = "/wifi.json";
 const char *LOCATION_FILE = "/location.json";
+const char *THEME_FILE = "/theme.json";
 
 #define TFT_CS 15
 #define TFT_DC 2
@@ -30,7 +31,7 @@ const char *LOCATION_FILE = "/location.json";
 #define TOUCH_MIN_Y 280
 #define TOUCH_MAX_Y 3860
 
-static const uint32_t REFRESH_INTERVAL_MS = 1800000; // 30 minutes
+static const uint32_t REFRESH_INTERVAL_MS = 900000; // 15 minutes
 static const char *GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 static const char *MARINE_URL = "https://marine-api.open-meteo.com/v1/marine";
 
@@ -72,12 +73,66 @@ struct Rect {
   int16_t h;
 };
 
+struct Theme {
+  uint16_t background;
+  uint16_t text;
+  uint16_t textSecondary;
+  uint16_t accent;
+  uint16_t buttonPrimary;
+  uint16_t buttonSecondary;
+  uint16_t buttonDanger;
+  uint16_t buttonWarning;
+  uint16_t buttonKeys;
+  uint16_t buttonList;
+  uint16_t border;
+  uint16_t success;
+  uint16_t error;
+};
+
 LocationInfo cachedLocation;
 WifiCredentials wifiCredentials;
 Rect forgetButton = {0, 0, 0, 0};
 Rect forgetLocationButton = {0, 0, 0, 0};
+Rect themeButton = {0, 0, 0, 0};
 String surfLocation = DEFAULT_SURF_LOCATION;
 int locationRetryCount = 0;
+bool darkMode = true;
+
+// Dark theme colors
+Theme darkTheme = {
+  BLACK,      // background
+  WHITE,      // text
+  CYAN,       // textSecondary (accent text)
+  YELLOW,     // accent
+  0x2C40,     // buttonPrimary (dark green)
+  0x18C3,     // buttonSecondary (dark teal)
+  0x8000,     // buttonDanger (dark red)
+  0xCA00,     // buttonWarning (dark orange)
+  0x2104,     // buttonKeys (dark gray)
+  0x4A49,     // buttonList (dark blue-gray)
+  BLACK,      // border
+  0x2C40,     // success (dark green)
+  0x8000      // error (dark red)
+};
+
+// Light theme colors
+Theme lightTheme = {
+  WHITE,      // background
+  BLACK,      // text
+  BLUE,       // textSecondary
+  0xFD20,     // accent (orange)
+  GREEN,      // buttonPrimary
+  BLUE,       // buttonSecondary
+  RED,        // buttonDanger
+  0xFD20,     // buttonWarning (orange)
+  0xCE79,     // buttonKeys (light gray)
+  0xAD55,     // buttonList (lighter gray)
+  BLACK,      // border
+  GREEN,      // success
+  RED         // error
+};
+
+Theme currentTheme = darkTheme;
 
 void logInfo(const String &message) { Serial.printf("[INFO  %10lu ms] %s\n", millis(), message.c_str()); }
 void logError(const String &message) { Serial.printf("[ERROR %10lu ms] %s\n", millis(), message.c_str()); }
@@ -111,7 +166,7 @@ TouchPoint getTouchPoint() {
 
 void drawButton(const Rect &r, const String &label, uint16_t bg, uint16_t fg = BLACK, uint8_t textSize = 2) {
   gfx->fillRoundRect(r.x, r.y, r.w, r.h, 6, bg);
-  gfx->drawRoundRect(r.x, r.y, r.w, r.h, 6, BLACK);
+  gfx->drawRoundRect(r.x, r.y, r.w, r.h, 6, currentTheme.border);
   gfx->setTextColor(fg);
   gfx->setTextSize(textSize);
   int16_t tx = r.x + 8;
@@ -121,13 +176,13 @@ void drawButton(const Rect &r, const String &label, uint16_t bg, uint16_t fg = B
 }
 
 void showStatus(const String &line1, const String &line2 = "", uint16_t color = WHITE) {
-  gfx->fillScreen(BLACK);
+  gfx->fillScreen(currentTheme.background);
   gfx->setTextColor(color);
   gfx->setTextSize(2);
   gfx->setCursor(12, 24);
   gfx->println(line1);
   if (!line2.isEmpty()) {
-    gfx->setTextColor(WHITE);
+    gfx->setTextColor(currentTheme.text);
     gfx->setCursor(12, 56);
     gfx->println(line2);
   }
@@ -187,6 +242,54 @@ void deleteWifiCredentials() {
     logInfo("Deleted saved Wi-Fi credentials.");
   }
   wifiCredentials = WifiCredentials();
+}
+
+bool saveThemePreference(bool isDark) {
+  DynamicJsonDocument doc(256);
+  doc["darkMode"] = isDark;
+
+  File f = SPIFFS.open(THEME_FILE, FILE_WRITE);
+  if (!f) {
+    logError("Failed to open theme file for write.");
+    return false;
+  }
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write theme file.");
+    f.close();
+    return false;
+  }
+  f.close();
+  logInfo("Saved theme preference to SPIFFS.");
+  return true;
+}
+
+bool loadThemePreference() {
+  if (!SPIFFS.exists(THEME_FILE)) {
+    logInfo("No saved theme preference.");
+    return true;  // Default to dark mode
+  }
+
+  File f = SPIFFS.open(THEME_FILE, FILE_READ);
+  if (!f) {
+    logError("Failed to open theme file for read.");
+    return true;
+  }
+
+  DynamicJsonDocument doc(256);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    logError("Failed to parse theme file.");
+    return true;
+  }
+
+  bool isDark = doc["darkMode"] | true;
+  logInfo(String("Loaded theme: ") + (isDark ? "dark" : "light"));
+  return isDark;
+}
+
+void applyTheme() {
+  currentTheme = darkMode ? darkTheme : lightTheme;
 }
 
 bool saveSurfLocation(const LocationInfo &locInfo) {
@@ -285,15 +388,15 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
   int keyCount = 0;
 
   while (true) {
-    gfx->fillScreen(BLACK);
-    gfx->setTextColor(CYAN);
+    gfx->fillScreen(currentTheme.background);
+    gfx->setTextColor(currentTheme.textSecondary);
     gfx->setTextSize(2);
     gfx->setCursor(8, 8);
     gfx->println(title);
 
-    gfx->drawRect(8, 30, gfx->width() - 16, 28, WHITE);
+    gfx->drawRect(8, 30, gfx->width() - 16, 28, currentTheme.border);
     gfx->setCursor(12, 38);
-    gfx->setTextColor(WHITE);
+    gfx->setTextColor(currentTheme.text);
     String shown = value;
     if (secret) {
       shown = "";
@@ -311,7 +414,7 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
       for (int i = 0; i < len; ++i) {
         Rect kr = {int16_t(8 + i * (keyW + 2)), int16_t(y), int16_t(keyW), int16_t(24)};
         String label = String(rows[r][i]);
-        drawButton(kr, label, 0x2104, WHITE, 1);  // Dark gray buttons
+        drawButton(kr, label, currentTheme.buttonKeys, currentTheme.text, 1);
         keyRects[keyCount] = kr;
         keyLabels[keyCount] = label;
         keyCount++;
@@ -324,11 +427,11 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
     Rect clear = {140, 180, 60, 26};
     Rect space = {206, 180, 60, 26};
     Rect done = {272, 180, 40, 26};
-    drawButton(shift, shiftOn ? "ABC" : "abc", MAGENTA, WHITE, 1);
-    drawButton(back, "<-", 0xFD20, BLACK, 1);
-    drawButton(clear, "CLR", RED, WHITE, 1);
-    drawButton(space, "SPC", BLUE, WHITE, 1);
-    drawButton(done, "OK", GREEN, BLACK, 1);
+    drawButton(shift, shiftOn ? "ABC" : "abc", currentTheme.buttonWarning, currentTheme.text, 1);
+    drawButton(back, "<-", currentTheme.buttonWarning, currentTheme.text, 1);
+    drawButton(clear, "CLR", currentTheme.buttonDanger, currentTheme.text, 1);
+    drawButton(space, "SPC", currentTheme.buttonSecondary, currentTheme.text, 1);
+    drawButton(done, "OK", currentTheme.buttonPrimary, currentTheme.text, 1);
 
     while (true) {
       TouchPoint p = getTouchPoint();
@@ -387,20 +490,20 @@ WifiCredentials runWifiSetupTouch() {
 
   while (true) {
     if (needsRedraw) {
-      gfx->fillScreen(BLACK);
-      gfx->setTextColor(CYAN);
+      gfx->fillScreen(currentTheme.background);
+      gfx->setTextColor(currentTheme.textSecondary);
       gfx->setTextSize(2);
       gfx->setCursor(10, 10);
       gfx->println("Wi-Fi Setup");
 
-      drawButton(ssidButton, "SSID: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), BLUE, WHITE, 1);
+      drawButton(ssidButton, "SSID: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), currentTheme.buttonSecondary, currentTheme.text, 1);
       String masked = "<tap to set>";
       if (!creds.password.isEmpty()) {
         masked = "";
         for (size_t i = 0; i < creds.password.length(); ++i) masked += '*';
       }
-      drawButton(passButton, "PASS: " + masked, BLUE, WHITE, 1);
-      drawButton(connectButton, "Save + Connect", GREEN, BLACK, 2);
+      drawButton(passButton, "PASS: " + masked, currentTheme.buttonSecondary, currentTheme.text, 1);
+      drawButton(connectButton, "Save + Connect", currentTheme.buttonPrimary, currentTheme.text, 2);
       needsRedraw = false;
     }
 
@@ -437,8 +540,8 @@ int selectLocationFromList(const std::vector<LocationInfo> &locations) {
   const int startY = 40;
   
   while (true) {
-    gfx->fillScreen(BLACK);
-    gfx->setTextColor(CYAN);
+    gfx->fillScreen(currentTheme.background);
+    gfx->setTextColor(currentTheme.textSecondary);
     gfx->setTextSize(2);
     gfx->setCursor(10, 10);
     gfx->println("Select Location:");
@@ -448,13 +551,13 @@ int selectLocationFromList(const std::vector<LocationInfo> &locations) {
       Rect r = {8, int16_t(startY + i * itemHeight), int16_t(gfx->width() - 16), int16_t(itemHeight - 4)};
       String label = locations[i].displayName;
       if (label.length() > 35) label = label.substring(0, 35) + "...";
-      drawButton(r, label, 0x4A49, WHITE, 1);
+      drawButton(r, label, currentTheme.buttonList, currentTheme.text, 1);
       buttons.push_back(r);
     }
     
     // Cancel button
     Rect cancelBtn = {8, int16_t(startY + 7 * itemHeight), int16_t(gfx->width() - 16), 30};
-    drawButton(cancelBtn, "Cancel", RED, WHITE, 2);
+    drawButton(cancelBtn, "Cancel", currentTheme.buttonDanger, currentTheme.text, 2);
     
     while (true) {
       TouchPoint p = getTouchPoint();
@@ -492,17 +595,17 @@ String runLocationSetupTouch() {
 
   while (true) {
     if (needsRedraw) {
-      gfx->fillScreen(BLACK);
-      gfx->setTextColor(CYAN);
+      gfx->fillScreen(currentTheme.background);
+      gfx->setTextColor(currentTheme.textSecondary);
       gfx->setTextSize(2);
       gfx->setCursor(10, 10);
       gfx->println("Surf Location");
 
       String shownLocation = location.isEmpty() ? String("<tap to set>") : location;
       if (shownLocation.length() > 38) shownLocation = shownLocation.substring(0, 38) + "...";
-      drawButton(locationButton, shownLocation, BLUE, WHITE, 1);
-      drawButton(saveButton, "Save", GREEN, BLACK, 2);
-      drawButton(skipButton, "Default", 0x7BEF, BLACK, 2);
+      drawButton(locationButton, shownLocation, currentTheme.buttonSecondary, currentTheme.text, 1);
+      drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
+      drawButton(skipButton, "Default", currentTheme.buttonList, currentTheme.text, 2);
       needsRedraw = false;
     }
 
@@ -517,8 +620,8 @@ String runLocationSetupTouch() {
       String searchTerm = touchKeyboardInput("Enter surf location", location, false);
       if (!searchTerm.isEmpty()) {
         // Show searching message
-        gfx->fillScreen(BLACK);
-        gfx->setTextColor(CYAN);
+        gfx->fillScreen(currentTheme.background);
+        gfx->setTextColor(currentTheme.textSecondary);
         gfx->setTextSize(2);
         gfx->setCursor(10, 10);
         gfx->println("Searching locations...");
@@ -528,7 +631,7 @@ String runLocationSetupTouch() {
         
         if (matches.empty()) {
           gfx->setCursor(10, 50);
-          gfx->setTextColor(RED);
+          gfx->setTextColor(currentTheme.error);
           gfx->println("No locations found");
           delay(2000);
           needsRedraw = true;
@@ -554,8 +657,8 @@ String runLocationSetupTouch() {
         return cachedLocation.displayName;
       } else {
         // Need to search and select first
-        gfx->fillScreen(BLACK);
-        gfx->setTextColor(RED);
+        gfx->fillScreen(currentTheme.background);
+        gfx->setTextColor(currentTheme.error);
         gfx->setTextSize(2);
         gfx->setCursor(10, 100);
         gfx->println("Please search and");
@@ -567,8 +670,8 @@ String runLocationSetupTouch() {
     } else if (pointInRect(p.x, p.y, skipButton)) {
       while (touch.touched()) delay(20);
       // Fetch default location
-      gfx->fillScreen(BLACK);
-      gfx->setTextColor(CYAN);
+      gfx->fillScreen(currentTheme.background);
+      gfx->setTextColor(currentTheme.textSecondary);
       gfx->setTextSize(2);
       gfx->setCursor(10, 100);
       gfx->println("Loading default...");
@@ -579,7 +682,7 @@ String runLocationSetupTouch() {
         saveSurfLocation(cachedLocation);
         return matches[0].displayName;
       } else {
-        gfx->setTextColor(RED);
+        gfx->setTextColor(currentTheme.error);
         gfx->setCursor(10, 125);
         gfx->println("Default location failed");
         delay(2000);
@@ -686,40 +789,42 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
 }
 
 void drawForgetButton() {
-  forgetButton = {gfx->width() - 214, 8, 102, 24};
-  forgetLocationButton = {gfx->width() - 106, 8, 102, 24};
-  drawButton(forgetButton, "Forget WiFi", RED, WHITE, 1);
-  drawButton(forgetLocationButton, "Forget Loc", 0xFD20, BLACK, 1);
+  forgetButton = {gfx->width() - 310, 8, 98, 24};
+  forgetLocationButton = {gfx->width() - 206, 8, 98, 24};
+  themeButton = {gfx->width() - 102, 8, 98, 24};
+  drawButton(forgetButton, "Forget WiFi", currentTheme.buttonDanger, currentTheme.text, 1);
+  drawButton(forgetLocationButton, "Forget Loc", currentTheme.buttonWarning, currentTheme.text, 1);
+  drawButton(themeButton, darkMode ? "Light" : "Dark", currentTheme.buttonSecondary, currentTheme.text, 1);
 }
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
-  gfx->fillScreen(BLACK);
+  gfx->fillScreen(currentTheme.background);
   int16_t w = gfx->width();
 
-  gfx->setTextColor(CYAN);
+  gfx->setTextColor(currentTheme.textSecondary);
   gfx->setTextSize(3);
   gfx->setCursor(10, 10);
   gfx->println("Surf spot");
 
-  gfx->setTextColor(WHITE);
+  gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(3);
   gfx->setCursor(10, 38);
   String name = location.displayName;
   if (name.length() > 20) name = name.substring(0, 20) + "...";
   gfx->println(name);
 
-  gfx->setTextColor(YELLOW);
+  gfx->setTextColor(currentTheme.accent);
   gfx->setCursor(10, 80);
   gfx->println("Wave height");
-  gfx->setTextColor(WHITE);
+  gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(6);
   gfx->setCursor(10, 110);
   float waveHeightFeet = forecast.waveHeight * 3.28084;
   gfx->println(String(waveHeightFeet, 1) + " ft");
 
   bool happy = forecast.waveHeight >= 1.0f;
-  uint16_t accent = happy ? GREEN : RED;
-  gfx->setTextColor(WHITE);
+  uint16_t accent = happy ? currentTheme.success : currentTheme.error;
+  gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(3);
   gfx->setCursor(10, 175);
   gfx->println("Period / Dir");
@@ -743,7 +848,7 @@ void setupDisplay() {
 #endif
   gfx->begin();
   gfx->setRotation(1);
-  gfx->fillScreen(BLACK);
+  gfx->fillScreen(currentTheme.background);
 #if TFT_BL >= 0
   digitalWrite(TFT_BL, HIGH);  // Turn on backlight after init
 #endif
@@ -763,17 +868,23 @@ bool handleMainScreenTouch() {
   if (pointInRect(p.x, p.y, forgetButton)) {
     deleteWifiCredentials();
     WiFi.disconnect(true, true);
-    showStatus("Credentials deleted", "Reconfigure Wi-Fi", 0xFD20);
+    showStatus("Credentials deleted", "Reconfigure Wi-Fi", currentTheme.buttonWarning);
     delay(1200);
     return true;
   }
   if (pointInRect(p.x, p.y, forgetLocationButton)) {
     deleteSurfLocation();
-    showStatus("Location deleted", "Reconfigure location", 0xFD20);
+    showStatus("Location deleted", "Reconfigure location", currentTheme.buttonWarning);
     delay(1200);
     surfLocation = "";  // Ensure it's cleared
     cachedLocation = LocationInfo();
     return true;
+  }
+  if (pointInRect(p.x, p.y, themeButton)) {
+    darkMode = !darkMode;
+    applyTheme();
+    saveThemePreference(darkMode);
+    return true;  // Trigger redraw
   }
   return false;
 }
@@ -792,12 +903,17 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  setupDisplay();
-  setupTouch();
   if (!SPIFFS.begin(true)) {
-    showStatus("SPIFFS failed", "Restart device", RED);
+    Serial.println("SPIFFS failed");
     while (true) delay(1000);
   }
+
+  // Load theme preference before display init
+  darkMode = loadThemePreference();
+  applyTheme();
+
+  setupDisplay();
+  setupTouch();
 
   ensureWifiConnected();
 
