@@ -94,6 +94,8 @@ struct Theme {
   uint16_t success;
   uint16_t error;
   uint16_t cloudColor;
+  uint16_t periodDirTextColor;
+  uint16_t periodDirNumberColor;
 };
 
 LocationInfo cachedLocation;
@@ -112,7 +114,7 @@ Theme darkTheme = {
   BLACK,      // background
   WHITE,      // text
   CYAN,       // textSecondary (accent text)
-  YELLOW,     // accent
+  YELLOW,     // accent (sun - yellow on night mode)
   0x2C40,     // buttonPrimary (dark green)
   0x8000,     // buttonSecondary (dark red)
   0x8000,     // buttonDanger (dark red)
@@ -122,7 +124,9 @@ Theme darkTheme = {
   BLACK,      // border
   0x2C40,     // success (dark green)
   0x7FFF,     // error (inverted - cyan)
-  RED         // cloudColor (red)
+  0x4DFF,     // cloudColor (light blue on night mode)
+  CYAN,       // periodDirTextColor (cyan on night mode)
+  0x65C8      // periodDirNumberColor (lighter green on night mode)
 };
 
 // Light theme colors
@@ -130,7 +134,7 @@ Theme lightTheme = {
   WHITE,      // background
   BLACK,      // text
   BLUE,       // textSecondary
-  0xFD20,     // accent (orange)
+  0xFE80,     // accent (orange-yellow on day mode)
   GREEN,      // buttonPrimary
   RED,        // buttonSecondary
   RED,        // buttonDanger
@@ -140,7 +144,9 @@ Theme lightTheme = {
   BLACK,      // border
   GREEN,      // success
   0x07FF,     // error (inverted - cyan)
-  RED         // cloudColor (red)
+  0x0016,     // cloudColor (dark blue on day mode)
+  0xCA00,     // periodDirTextColor (orange on day mode)
+  0x2400      // periodDirNumberColor (darker green on day mode)
 };
 
 Theme currentTheme = darkTheme;
@@ -152,6 +158,11 @@ void logError(const String &message) { Serial.printf("[ERROR %10lu ms] %s\n", mi
 std::vector<LocationInfo> fetchLocationMatches(const String &location, int maxResults);
 int selectLocationFromList(const std::vector<LocationInfo> &locations);
 int selectDefaultLocation();
+
+// Invert a 16-bit RGB565 color
+uint16_t invertColor(uint16_t color) {
+  return color ^ 0xFFFF;
+}
 
 bool pointInRect(int16_t x, int16_t y, const Rect &r) {
   return x >= r.x && y >= r.y && x < (r.x + r.w) && y < (r.y + r.h);
@@ -302,6 +313,23 @@ bool loadThemePreference() {
 
 void applyTheme() {
   currentTheme = darkMode ? darkTheme : lightTheme;
+  // Invert all theme colors to compensate for display hardware inversion
+  currentTheme.background = invertColor(currentTheme.background);
+  currentTheme.text = invertColor(currentTheme.text);
+  currentTheme.textSecondary = invertColor(currentTheme.textSecondary);
+  currentTheme.accent = invertColor(currentTheme.accent);
+  currentTheme.buttonPrimary = invertColor(currentTheme.buttonPrimary);
+  currentTheme.buttonSecondary = invertColor(currentTheme.buttonSecondary);
+  currentTheme.buttonDanger = invertColor(currentTheme.buttonDanger);
+  currentTheme.buttonWarning = invertColor(currentTheme.buttonWarning);
+  currentTheme.buttonKeys = invertColor(currentTheme.buttonKeys);
+  currentTheme.buttonList = invertColor(currentTheme.buttonList);
+  currentTheme.border = invertColor(currentTheme.border);
+  currentTheme.success = invertColor(currentTheme.success);
+  currentTheme.error = invertColor(currentTheme.error);
+  currentTheme.cloudColor = invertColor(currentTheme.cloudColor);
+  currentTheme.periodDirTextColor = invertColor(currentTheme.periodDirTextColor);
+  currentTheme.periodDirNumberColor = invertColor(currentTheme.periodDirNumberColor);
 }
 
 bool saveWaveHeightPreference(float threshold) {
@@ -1040,7 +1068,7 @@ void drawForgetButton() {
   
   // Top-left: Forget WiFi
   forgetButton = {int16_t(startX), int16_t(startY), int16_t(btnW), int16_t(btnH)};
-  drawButton(forgetButton, "WiFi", currentTheme.error, currentTheme.text, 1);
+  drawButton(forgetButton, "WiFi", currentTheme.success, currentTheme.text, 1);
   
   // Top-right: Theme toggle
   themeButton = {int16_t(startX + btnW + gap), int16_t(startY), int16_t(btnW), int16_t(btnH)};
@@ -1085,7 +1113,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
   gfx->println(name);
 
   gfx->setTextColor(currentTheme.accent);
-  gfx->setCursor(10, 85);
+  gfx->setCursor(10, 82);
   gfx->println("Wave height");
   gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(9);
@@ -1095,18 +1123,18 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast) {
 
   bool happy = forecast.waveHeight * 3.28084 >= waveHeightThreshold;
   uint16_t accent = happy ? currentTheme.success : currentTheme.error;
-  gfx->setTextColor(currentTheme.text);
+  gfx->setTextColor(currentTheme.periodDirTextColor);
   gfx->setTextSize(5);
   gfx->setCursor(10, 200);
   gfx->println("Period | Dir");
-  gfx->setTextColor(accent);
+  gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setCursor(10, 255);
   String detailStr = String(forecast.wavePeriod, 1) + "s     " + String(forecast.waveDirection, 0) + (char)248;
   gfx->println(detailStr);
 
   // Draw surf condition graphic
   if (happy) {
-    drawGoodSurfGraphic(w - 70, 150, accent);
+    drawGoodSurfGraphic(w - 70, 150, currentTheme.accent);
   } else {
     drawBadSurfGraphic(w - 70, 150, accent);
   }
