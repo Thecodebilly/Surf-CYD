@@ -243,8 +243,8 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   const int16_t swellCenterX = 90;
   const int16_t windCenterX = windLabelX + 65;
 
-  drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection, currentTheme.periodDirNumberColor);
-  drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection, currentTheme.accent);
+  drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection + 180.0f, YELLOW);
+  drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection + 180.0f, BLACK);
 
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(3);
