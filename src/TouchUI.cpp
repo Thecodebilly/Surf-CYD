@@ -144,8 +144,10 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
 WifiCredentials runWifiSetupTouch() {
   WifiCredentials creds;
   Rect ssidButton = {12, 64, 296, 36};
-  Rect passButton = {12, 116, 296, 36};
+  Rect passButton = {12, 116, 236, 36};
+  Rect passToggleButton = {254, 116, 54, 36};
   Rect connectButton = {12, 172, 296, 44};
+  bool showPassword = false;
   
   bool needsRedraw = true;
 
@@ -161,10 +163,15 @@ WifiCredentials runWifiSetupTouch() {
                  currentTheme.buttonSecondary, currentTheme.text, 1);
       String masked = "<tap to set>";
       if (!creds.password.isEmpty()) {
-        masked = "";
-        for (size_t i = 0; i < creds.password.length(); ++i) masked += '*';
+        if (showPassword) {
+          masked = creds.password;
+        } else {
+          masked = "";
+          for (size_t i = 0; i < creds.password.length(); ++i) masked += '*';
+        }
       }
       drawButton(passButton, "PASS: " + masked, currentTheme.buttonSecondary, currentTheme.text, 1);
+      drawButton(passToggleButton, showPassword ? "Hide" : "Show", currentTheme.buttonWarning, currentTheme.text, 1);
       drawButton(connectButton, "Save + Connect", currentTheme.buttonPrimary, currentTheme.text, 2);
       needsRedraw = false;
     }
@@ -181,7 +188,11 @@ WifiCredentials runWifiSetupTouch() {
       needsRedraw = true;
     } else if (pointInRect(p.x, p.y, passButton)) {
       while (touch.touched()) delay(20);
-      creds.password = touchKeyboardInput("Enter Password", creds.password, true);
+      creds.password = touchKeyboardInput("Enter Password", creds.password, !showPassword);
+      needsRedraw = true;
+    } else if (pointInRect(p.x, p.y, passToggleButton)) {
+      while (touch.touched()) delay(20);
+      showPassword = !showPassword;
       needsRedraw = true;
     } else if (pointInRect(p.x, p.y, connectButton) && !creds.ssid.isEmpty()) {
       while (touch.touched()) delay(20);
