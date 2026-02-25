@@ -101,8 +101,9 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   SurfForecast forecast;
   if (WiFi.status() != WL_CONNECTED) return forecast;
 
+  // Fetch wave data from Marine API
   HTTPClient http;
-  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wave_height,wave_period,wave_direction,windspeed_10m,winddirection_10m&timezone=auto";
+  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wave_height,wave_period,wave_direction&timezone=auto";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(url);
   int code = http.GET();
@@ -120,10 +121,7 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   JsonArray heights = doc["hourly"]["wave_height"];
   JsonArray periods = doc["hourly"]["wave_period"];
   JsonArray directions = doc["hourly"]["wave_direction"];
-  JsonArray windSpeeds = doc["hourly"]["windspeed_10m"];
-  JsonArray windDirections = doc["hourly"]["winddirection_10m"];
-  if (times.isNull() || heights.isNull() || periods.isNull() || directions.isNull() ||
-      windSpeeds.isNull() || windDirections.isNull() || times.size() == 0) {
+  if (times.isNull() || heights.isNull() || periods.isNull() || directions.isNull() || times.size() == 0) {
     return forecast;
   }
 
@@ -131,8 +129,27 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   forecast.waveHeight = heights[0] | 0.0f;
   forecast.wavePeriod = periods[0] | 0.0f;
   forecast.waveDirection = directions[0] | 0.0f;
-  forecast.windSpeed = windSpeeds[0] | 0.0f;
-  forecast.windDirection = windDirections[0] | 0.0f;
+
+  // Fetch wind data from Weather Forecast API
+  url = String(WEATHER_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=mph&timezone=auto";
+  http.begin(url);
+  code = http.GET();
+  if (code == HTTP_CODE_OK) {
+    payload = http.getString();
+    http.end();
+    DynamicJsonDocument windDoc(12 * 1024);
+    if (deserializeJson(windDoc, payload) == DeserializationError::Ok) {
+      JsonArray windSpeeds = windDoc["hourly"]["wind_speed_10m"];
+      JsonArray windDirections = windDoc["hourly"]["wind_direction_10m"];
+      if (!windSpeeds.isNull() && !windDirections.isNull() && windSpeeds.size() > 0) {
+        forecast.windSpeed = windSpeeds[0] | 0.0f;
+        forecast.windDirection = windDirections[0] | 0.0f;
+      }
+    }
+  } else {
+    http.end();
+  }
+
   forecast.valid = true;
   return forecast;
 }

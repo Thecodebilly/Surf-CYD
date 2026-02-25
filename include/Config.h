@@ -42,5 +42,6 @@ static const uint32_t REFRESH_INTERVAL_MS = 900000; // 15 minutes
 // API URLs
 static const char *GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 static const char *MARINE_URL = "https://marine-api.open-meteo.com/v1/marine";
+static const char *WEATHER_URL = "https://api.open-meteo.com/v1/forecast";
 
 #endif // CONFIG_H

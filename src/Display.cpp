@@ -113,11 +113,21 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 
 void drawDirectionArrow(int16_t cx, int16_t cy, int16_t length, float degrees, uint16_t color) {
   float radians = (degrees - 90.0f) * DEG_TO_RAD;
-  int16_t endX = cx + (int16_t)(cosf(radians) * length);
-  int16_t endY = cy + (int16_t)(sinf(radians) * length);
+  int16_t halfLen = length / 2;
+  int16_t endX = cx + (int16_t)(cosf(radians) * halfLen);
+  int16_t endY = cy + (int16_t)(sinf(radians) * halfLen);
 
-  gfx->drawLine(cx, cy, endX, endY, color);
-  gfx->drawLine(cx + 1, cy, endX + 1, endY, color);
+  if (endX < 0 || endX > gfx->width() || endY < 0 || endY > gfx->height()) {
+    radians += PI;
+    endX = cx + (int16_t)(cosf(radians) * halfLen);
+    endY = cy + (int16_t)(sinf(radians) * halfLen);
+  }
+
+  int16_t startX = cx - (int16_t)(cosf(radians) * halfLen);
+  int16_t startY = cy - (int16_t)(sinf(radians) * halfLen);
+
+  gfx->drawLine(startX, startY, endX, endY, color);
+  gfx->drawLine(startX + 1, startY, endX + 1, endY, color);
 
   float headAngle = 25.0f * DEG_TO_RAD;
   int16_t headLen = 12;
@@ -128,7 +138,6 @@ void drawDirectionArrow(int16_t cx, int16_t cy, int16_t length, float degrees, u
 
   gfx->drawLine(endX, endY, leftX, leftY, color);
   gfx->drawLine(endX, endY, rightX, rightY, color);
-  gfx->fillCircle(cx, cy, 2, color);
 }
 
 void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton) {
@@ -216,37 +225,34 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setCursor(10, 228);
   gfx->println(String(forecast.wavePeriod, 1) + " s");
 
+  int16_t windLabelX = 234;
+  int16_t windValueX = windLabelX;
+
   gfx->setTextColor(currentTheme.periodDirTextColor);
   gfx->setTextSize(3);
-  gfx->setCursor(132, 200);
+  gfx->setCursor(windLabelX, 200);
   gfx->println("Wind");
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(5);
-  gfx->setCursor(132, 228);
-  gfx->println(String(forecast.windSpeed, 1) + " km/h");
+  gfx->setCursor(windValueX, 228);
+  gfx->println(String(forecast.windSpeed, 1) + " mph");
 
   // Bottom two-arrow strip
-  const int16_t arrowY = 295;
-  const int16_t swellCenterX = 95;
-  const int16_t windCenterX = 225;
-
-  gfx->setTextColor(currentTheme.periodDirTextColor);
-  gfx->setTextSize(3);
-  gfx->setCursor(30, 262);
-  gfx->println("Swell dir");
-  gfx->setCursor(170, 262);
-  gfx->println("Wind dir");
+  const int16_t labelY = 252;
+  const int16_t arrowY = 292;
+  const int16_t swellCenterX = 90;
+  const int16_t windCenterX = windLabelX + 65;
 
   drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection, currentTheme.periodDirNumberColor);
   drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection, currentTheme.accent);
 
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(3);
-  gfx->setCursor(54, 330);
+  gfx->setCursor(64, 360);
   gfx->println(String(forecast.waveDirection, 0) + (char)248);
 
   gfx->setTextColor(currentTheme.accent);
-  gfx->setCursor(187, 330);
+  gfx->setCursor(325, 360);
   gfx->println(String(forecast.windDirection, 0) + (char)248);
 
   drawForgetButton(forgetButton, forgetLocationButton, themeButton, waveButton);
