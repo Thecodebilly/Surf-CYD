@@ -109,6 +109,28 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   }
 }
 
+
+
+void drawDirectionArrow(int16_t cx, int16_t cy, int16_t length, float degrees, uint16_t color) {
+  float radians = (degrees - 90.0f) * DEG_TO_RAD;
+  int16_t endX = cx + (int16_t)(cosf(radians) * length);
+  int16_t endY = cy + (int16_t)(sinf(radians) * length);
+
+  gfx->drawLine(cx, cy, endX, endY, color);
+  gfx->drawLine(cx + 1, cy, endX + 1, endY, color);
+
+  float headAngle = 25.0f * DEG_TO_RAD;
+  int16_t headLen = 12;
+  int16_t leftX = endX - (int16_t)(cosf(radians - headAngle) * headLen);
+  int16_t leftY = endY - (int16_t)(sinf(radians - headAngle) * headLen);
+  int16_t rightX = endX - (int16_t)(cosf(radians + headAngle) * headLen);
+  int16_t rightY = endY - (int16_t)(sinf(radians + headAngle) * headLen);
+
+  gfx->drawLine(endX, endY, leftX, leftY, color);
+  gfx->drawLine(endX, endY, rightX, rightY, color);
+  gfx->fillCircle(cx, cy, 2, color);
+}
+
 void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton) {
   // 2x2 grid layout in top right
   int btnW = 68;
@@ -149,7 +171,6 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setTextSize(4);
   gfx->setCursor(10, 38);
   String name = location.displayName;
-  // Get string before 2nd comma for shorter display
   if (name.length() > 20) {
     gfx->setTextSize(2);
     int firstComma = name.indexOf(',');
@@ -161,36 +182,72 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
     }
   }
   if (name.length() > 20) gfx->setTextSize(3);
-  
   if (name.length() > 30) name = name.substring(0, 30) + "...";
   gfx->println(name);
 
   gfx->setTextColor(currentTheme.accent);
-  gfx->setCursor(10, 82);
+  gfx->setTextSize(3);
+  gfx->setCursor(10, 86);
   gfx->println("Wave height");
+
+  float waveHeightFeet = forecast.waveHeight * 3.28084f;
   gfx->setTextColor(currentTheme.text);
-  gfx->setTextSize(9);
-  gfx->setCursor(10, 120);
-  float waveHeightFeet = forecast.waveHeight * 3.28084;
+  gfx->setTextSize(7);
+  gfx->setCursor(10, 118);
   gfx->println(String(waveHeightFeet, 1) + " ft");
 
-  bool happy = forecast.waveHeight * 3.28084 >= waveHeightThreshold;
+  bool happy = waveHeightFeet >= waveHeightThreshold;
   uint16_t accent = happy ? currentTheme.success : currentTheme.error;
-  gfx->setTextColor(currentTheme.periodDirTextColor);
-  gfx->setTextSize(5);
-  gfx->setCursor(10, 200);
-  gfx->println("Period | Dir");
-  gfx->setTextColor(currentTheme.periodDirNumberColor);
-  gfx->setCursor(10, 255);
-  String detailStr = String(forecast.wavePeriod, 1) + "s     " + String(forecast.waveDirection, 0) + (char)248;
-  gfx->println(detailStr);
 
-  // Draw surf condition graphic
+  // Right side condition graphic moved up to leave room for arrows
   if (happy) {
-    drawGoodSurfGraphic(w - 70, 150, currentTheme.accent);
+    drawGoodSurfGraphic(w - 78, 130, currentTheme.accent);
   } else {
-    drawBadSurfGraphic(w - 70, 150, accent);
+    drawBadSurfGraphic(w - 78, 130, accent);
   }
+
+  // Middle data row
+  gfx->setTextColor(currentTheme.periodDirTextColor);
+  gfx->setTextSize(3);
+  gfx->setCursor(10, 200);
+  gfx->println("Period");
+  gfx->setTextColor(currentTheme.periodDirNumberColor);
+  gfx->setTextSize(5);
+  gfx->setCursor(10, 228);
+  gfx->println(String(forecast.wavePeriod, 1) + " s");
+
+  gfx->setTextColor(currentTheme.periodDirTextColor);
+  gfx->setTextSize(3);
+  gfx->setCursor(132, 200);
+  gfx->println("Wind");
+  gfx->setTextColor(currentTheme.periodDirNumberColor);
+  gfx->setTextSize(5);
+  gfx->setCursor(132, 228);
+  gfx->println(String(forecast.windSpeed, 1) + " km/h");
+
+  // Bottom two-arrow strip
+  const int16_t arrowY = 295;
+  const int16_t swellCenterX = 95;
+  const int16_t windCenterX = 225;
+
+  gfx->setTextColor(currentTheme.periodDirTextColor);
+  gfx->setTextSize(3);
+  gfx->setCursor(30, 262);
+  gfx->println("Swell dir");
+  gfx->setCursor(170, 262);
+  gfx->println("Wind dir");
+
+  drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection, currentTheme.periodDirNumberColor);
+  drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection, currentTheme.accent);
+
+  gfx->setTextColor(currentTheme.periodDirNumberColor);
+  gfx->setTextSize(3);
+  gfx->setCursor(54, 330);
+  gfx->println(String(forecast.waveDirection, 0) + (char)248);
+
+  gfx->setTextColor(currentTheme.accent);
+  gfx->setCursor(187, 330);
+  gfx->println(String(forecast.windDirection, 0) + (char)248);
 
   drawForgetButton(forgetButton, forgetLocationButton, themeButton, waveButton);
 }
