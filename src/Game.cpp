@@ -96,6 +96,7 @@ void runSurfGame(Rect &exitButton) {
   unsigned long spawnInterval = 1200;
   unsigned long gameStart = millis();
   bool gameOver = false;
+  uint16_t frameCount = 0;  // for throttling static UI repaints
   unsigned long highScore = loadHighScore();
   
   // Fetch global high score
@@ -162,12 +163,11 @@ void runSurfGame(Rect &exitButton) {
   gfx->setCursor(10, 10);
   gfx->print("Score: 0");
 
-  // "AVOID THE SHARKS!" banner — opposite of red = cyan (0x07FF)
+  // "SHARKS!" banner — opposite of red = cyan (0x07FF)
   gfx->setTextColor(0x07FF);
   gfx->setTextSize(2);
-  // 18 chars * 12px (size 2 char width) = 216px
-  gfx->setCursor(screenWidth / 2 - 108, 36);
-  gfx->println("AVOID THE SHARKS!");
+  gfx->setCursor(screenWidth / 2 - 42, 36);
+  gfx->println("SHARKS!");
   
   // Game loop
   while (!gameOver) {
@@ -359,9 +359,10 @@ void runSurfGame(Rect &exitButton) {
       prevGoldenY = goldenY;
     }
 
-    // Erase previous stick figure + board position every frame to prevent ghosting
-    // Height extended to cover board below feet (~28px below surferY)
-    gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 8, surferSize * 2, surferSize + 38, currentOceanColor);
+    // Erase previous stick figure + board only when position changed, to avoid flicker
+    if (prevSurferX != surferX) {
+      gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 11, surferSize * 2, surferSize + 21, currentOceanColor);
+    }
     
     // Update and draw shark fins
     for (int i = 0; i < maxObstacles; i++) {
@@ -426,11 +427,11 @@ void runSurfGame(Rect &exitButton) {
     {
       const int16_t bHW = 7;    // half-width of board
       const int16_t bBodyH = 14; // length of straight section
-      int16_t bTopY = surferY + 4; // top-cap center, just below feet
+      int16_t bTopY = surferY - 11; // top-cap center
       gfx->fillCircle(surferX, bTopY,          bHW, boardColor); // nose
       gfx->fillRect(surferX - bHW, bTopY,      bHW * 2 + 1, bBodyH, boardColor); // body
       gfx->fillCircle(surferX, bTopY + bBodyH, bHW, boardColor); // tail
-      gfx->drawLine(surferX, bTopY - bHW, surferX, bTopY + bBodyH + bHW, surferColor); // stringer
+      gfx->drawLine(surferX, bTopY - bHW, surferX, bTopY + bBodyH + bHW, 0x7BEF); // stringer — 0x7BEF displays as mid-gray on inverted screen
     }
     // Head
     gfx->fillCircle(surferX, surferY - surferSize, 3, surferColor);
@@ -450,28 +451,32 @@ void runSurfGame(Rect &exitButton) {
     
     // Only redraw score if it changed
     if (score != prevScore) {
-      // Erase old score area
-      gfx->fillRect(10, 10, 150, 20, bgColor);
-      // Draw new score
-      gfx->setTextColor(textColor);
+      // Render score with per-character background fill — no fillRect needed, eliminates flash
+      gfx->setTextColor(textColor, currentBgColor);
       gfx->setTextSize(2);
       gfx->setCursor(10, 10);
       gfx->print("Score: ");
-      gfx->println(score);
+      gfx->print(score);
+      gfx->print("      "); // trailing spaces wipe old digits if score got shorter
+      gfx->setTextColor(textColor); // reset to no-bg for other draws
       prevScore = score;
     }
     
-    // Redraw exit button and banner every frame so sharks can't permanently erase them
-    gfx->fillRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, exitBgColor);
-    gfx->drawRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, currentTheme.border);
-    gfx->setTextColor(exitTextColor);
-    gfx->setTextSize(1);
-    gfx->setCursor(exitButton.x + 8, exitButton.y + (exitButton.h / 2) - 4);
-    gfx->println("Exit");
-    gfx->setTextColor(0x07FF);
-    gfx->setTextSize(2);
-    gfx->setCursor(screenWidth / 2 - 108, 36);
-    gfx->println("AVOID THE SHARKS!");
+    // Redraw exit button and banner every 20 frames — reduces flicker, still recovers quickly if a shark passes through
+    frameCount++;
+    if (frameCount >= 20) {
+      frameCount = 0;
+      gfx->fillRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, exitBgColor);
+      gfx->drawRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, currentTheme.border);
+      gfx->setTextColor(exitTextColor);
+      gfx->setTextSize(1);
+      gfx->setCursor(exitButton.x + 8, exitButton.y + (exitButton.h / 2) - 4);
+      gfx->println("Exit");
+      gfx->setTextColor(0x07FF);
+      gfx->setTextSize(2);
+      gfx->setCursor(screenWidth / 2 - 42, 36);
+      gfx->println("SHARKS!");
+    }
     
     // Handle input
     if (touch.touched()) {
@@ -667,9 +672,9 @@ void showLeaderboard() {
   gfx->println("WORLD RECORDS");
   
   if (leaderboard.valid && leaderboard.count > 0) {
-    // Draw leaderboard entries
-    int16_t startY = 55;
-    int16_t lineHeight = 28;
+    // Draw leaderboard entries — textSize 2, lineHeight 22 fits all 10 in 320px height
+    int16_t startY = 48;
+    int16_t lineHeight = 22;
     
     for (int i = 0; i < leaderboard.count; i++) {
       int16_t y = startY + (i * lineHeight);
