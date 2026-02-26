@@ -29,6 +29,7 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
                               const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
                               String &surfLocation, LocationInfo &cachedLocation, 
                               float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
+                              String &tideLocationKey, bool &tideIsCalibrating,
                               float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection);
 
 #endif // TOUCHUI_H

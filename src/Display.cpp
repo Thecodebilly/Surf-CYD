@@ -236,7 +236,7 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
                   Rect &settingsButton,
-                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection) {
+                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection, bool tideIsCalibrating) {
   gfx->fillScreen(currentTheme.background);
   int16_t w = gfx->width();
 
@@ -359,8 +359,21 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->print(String(minTideFeet, 1));
   gfx->print("/");
   gfx->print(String(maxTideFeet, 1));
-  
-  // Draw "TIDE" text vertically centered in the tide bar
+    // Draw calibration indicator if tide is still calibrating
+  if (tideIsCalibrating) {
+    // Small circular pending icon above the tide range
+    int16_t iconX = tideX - 5;
+    int16_t iconY = tideBarY - 35;
+    uint16_t iconColor = currentTheme.buttonWarning;
+    
+    // Draw a small circle with rotating segments to indicate calibrating
+    gfx->drawCircle(iconX + 3, iconY + 3, 4, iconColor);
+    // Draw small arcs/segments to show it's pending (simplified as dots)
+    gfx->fillCircle(iconX + 3, iconY - 1, 1, iconColor);
+    gfx->fillCircle(iconX + 7, iconY + 3, 1, iconColor);
+    gfx->fillCircle(iconX + 3, iconY + 7, 1, iconColor);
+  }
+    // Draw "TIDE" text vertically centered in the tide bar
   gfx->setTextColor(currentTheme.periodDirTextColor);
   gfx->setTextSize(1);
   const char* tideText = "TIDE";

@@ -28,6 +28,8 @@ float waveHeightThreshold = 1.0f;
 float minTide = -1.0f;
 float maxTide = 1.0f;
 unsigned long tideTimestamp = 0;
+String tideLocationKey = "";
+bool tideIsCalibrating = true;
 float tideHeightOneHourAgo = 0.0f;
 unsigned long tideDirectionTimestamp = 0;
 int currentTideDirection = 0;
@@ -75,7 +77,7 @@ void setup() {
   }
   
   // Load tide range
-  loadTideRange(minTide, maxTide, tideTimestamp);
+  loadTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
   
   // Load tide direction tracking
   loadTideDirection(tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
@@ -136,16 +138,42 @@ void loop() {
   // Successfully fetched surf, reset retry count
   surfRetryCount = 0;
   
-  // Update tide range tracking (24 hour window)
+  // Create location key from coordinates (rounded to 2 decimal places for consistency)
+  String currentLocationKey = String(cachedLocation.latitude, 2) + \",\" + String(cachedLocation.longitude, 2);
+  
+  // Check if location has changed - if so, delete all tide data
+  if (tideLocationKey != \"\" && tideLocationKey != currentLocationKey) {
+    logInfo(\"Location changed from \" + tideLocationKey + \" to \" + currentLocationKey + \". Resetting tide data.\");
+    deleteTideRange();
+    deleteTideDirection();
+    minTide = -1.0f;
+    maxTide = 1.0f;
+    tideTimestamp = 0;
+    tideLocationKey = \"\";
+    tideIsCalibrating = true;
+    tideHeightOneHourAgo = 0.0f;
+    tideDirectionTimestamp = 0;
+    currentTideDirection = 0;
+  }
+  
+  // Update tide range tracking with calibration period
   unsigned long currentTime = millis();
-  if (tideTimestamp == 0 || (currentTime - tideTimestamp) > 86400000) {
-    // Reset after 24 hours or first run
+  if (tideTimestamp == 0) {
+    // First run - initialize calibration
     minTide = forecast.tideHeight;
     maxTide = forecast.tideHeight;
     tideTimestamp = currentTime;
-    saveTideRange(minTide, maxTide, tideTimestamp);
-  } else {
-    // Update min/max if needed
+    tideLocationKey = currentLocationKey;
+    tideIsCalibrating = true;
+    saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
+    logInfo(\"Started tide calibration at location: \" + tideLocationKey);
+  } else if (tideIsCalibrating && (currentTime - tideTimestamp) >= 86400000) {
+    // 24 hours have passed - calibration complete
+    tideIsCalibrating = false;
+    saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
+    logInfo(\"Tide calibration complete. Range: \" + String(minTide, 2) + \" to \" + String(maxTide, 2));
+  } else if (tideIsCalibrating) {
+    // Still calibrating - update min/max every reading
     bool updated = false;
     if (forecast.tideHeight < minTide) {
       minTide = forecast.tideHeight;
@@ -156,9 +184,11 @@ void loop() {
       updated = true;
     }
     if (updated) {
-      saveTideRange(minTide, maxTide, tideTimestamp);
+      saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
+      logInfo(\"Tide range updated during calibration: \" + String(minTide, 2) + \" to \" + String(maxTide, 2));
     }
   }
+  // If not calibrating, keep the established range (don't update)
 
   // Determine tide direction based on 1-hour trend
   // Only update direction if at least 1 hour has passed
@@ -184,7 +214,7 @@ void loop() {
   }
   // If less than 1 hour has passed, keep the previous direction
 
-  drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
+  drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection, tideIsCalibrating);
 
   uint32_t start = millis();
   while (millis() - start < REFRESH_INTERVAL_MS) {
@@ -192,6 +222,7 @@ void loop() {
       // Handle settings screen
       int touchResult = handleSettingsScreenTouch(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton,
                                                    surfLocation, cachedLocation, waveHeightThreshold, minTide, maxTide, tideTimestamp,
+                                                   tideLocationKey, tideIsCalibrating,
                                                    tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
       if (touchResult == 1) {
         // Location-affecting button: WiFi or Location
@@ -207,7 +238,7 @@ void loop() {
       } else if (touchResult == 4) {
         // Back button: exit settings
         inSettingsMode = false;
-        drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
+        drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection, tideIsCalibrating);
       }
     } else {
       // Handle main screen

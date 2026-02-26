@@ -495,6 +495,7 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
                               const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
                               String &surfLocation, LocationInfo &cachedLocation, 
                               float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
+                              String &tideLocationKey, bool &tideIsCalibrating,
                               float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection) {
   TouchPoint p = getTouchPoint();
   if (!p.pressed) return 0;
@@ -511,6 +512,18 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
   }
   if (pointInRect(p.x, p.y, forgetLocationButton)) {
     deleteSurfLocation();
+    // Delete tide data since location changes
+    deleteTideRange();
+    deleteTideDirection();
+    // Reset tide variables
+    minTide = -1.0f;
+    maxTide = 1.0f;
+    tideTimestamp = 0;
+    tideLocationKey = "";
+    tideIsCalibrating = true;
+    tideHeightOneHourAgo = 0.0f;
+    tideDirectionTimestamp = 0;
+    currentTideDirection = 0;
     showStatus("Location deleted", "Reconfigure location", currentTheme.buttonWarning);
     delay(1200);
     surfLocation = "";  // Ensure it's cleared

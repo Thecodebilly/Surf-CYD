@@ -229,11 +229,13 @@ void deleteSurfLocation() {
   }
 }
 
-bool saveTideRange(float minTide, float maxTide, unsigned long timestamp) {
-  DynamicJsonDocument doc(256);
+bool saveTideRange(float minTide, float maxTide, unsigned long timestamp, const String &locationKey, bool isCalibrating) {
+  DynamicJsonDocument doc(512);
   doc["minTide"] = minTide;
   doc["maxTide"] = maxTide;
   doc["timestamp"] = timestamp;
+  doc["locationKey"] = locationKey;
+  doc["isCalibrating"] = isCalibrating;
 
   File f = SPIFFS.open(TIDE_RANGE_FILE, FILE_WRITE);
   if (!f) {
@@ -250,10 +252,12 @@ bool saveTideRange(float minTide, float maxTide, unsigned long timestamp) {
   return true;
 }
 
-void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp) {
+void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp, String &locationKey, bool &isCalibrating) {
   minTide = -1.0f;
   maxTide = 1.0f;
   timestamp = 0;
+  locationKey = "";
+  isCalibrating = true;
 
   if (!SPIFFS.exists(TIDE_RANGE_FILE)) {
     logInfo("No saved tide range.");
@@ -266,7 +270,7 @@ void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp) {
     return;
   }
 
-  DynamicJsonDocument doc(256);
+  DynamicJsonDocument doc(512);
   DeserializationError err = deserializeJson(doc, f);
   f.close();
   if (err) {
@@ -277,6 +281,8 @@ void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp) {
   minTide = doc["minTide"] | -1.0f;
   maxTide = doc["maxTide"] | 1.0f;
   timestamp = doc["timestamp"] | 0UL;
+  locationKey = doc["locationKey"] | String("");
+  isCalibrating = doc["isCalibrating"] | true;
   logInfo(String("Loaded tide range: ") + String(minTide, 2) + " to " + String(maxTide, 2));
 }
 

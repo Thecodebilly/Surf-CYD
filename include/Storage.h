@@ -28,8 +28,8 @@ LocationInfo loadSurfLocationInfo();
 void deleteSurfLocation();
 
 // Tide range storage
-bool saveTideRange(float minTide, float maxTide, unsigned long timestamp);
-void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp);
+bool saveTideRange(float minTide, float maxTide, unsigned long timestamp, const String &locationKey, bool isCalibrating);
+void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp, String &locationKey, bool &isCalibrating);
 void deleteTideRange();
 
 // Tide direction storage
