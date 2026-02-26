@@ -531,16 +531,16 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
     return 2;  // Display only - don't clear location, just redraw
   }
   if (pointInRect(p.x, p.y, tideButton)) {
+    // Delete all saved settings
+    deleteWifiCredentials();
+    deleteThemePreference();
+    deleteWaveHeightPreference();
+    deleteSurfLocation();
     deleteTideRange();
-    minTide = -1.0f;
-    maxTide = 1.0f;
-    tideTimestamp = 0;
-    tideHeightOneHourAgo = 0.0f;
-    tideDirectionTimestamp = 0;
-    currentTideDirection = 0;
-    showStatus("Tide range reset", "Will recalibrate over 24h", currentTheme.buttonWarning);
-    delay(1200);
-    return 2;  // Display only - just redraw
+    
+    showStatus("All settings reset", "Device will restart...", currentTheme.buttonWarning);
+    delay(2000);
+    ESP.restart();  // Restart to apply reset
   }
   return 0;
 }

@@ -97,9 +97,11 @@ void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   // "No surf" visual: surfboard icon with prohibition circle/slash.
-  uint16_t boardColor = color;
-  uint16_t noSurfColor = currentTheme.error;
-  uint16_t finColor = BLACK;
+  // Surfboard is opposite of orange in light mode, yellow-green in dark mode
+  // Circle is always cyan (opposite of red)
+  uint16_t boardColor = darkMode ? 0x87E0 : 0x02DF;  // yellow-green : blue (opposite of orange)
+  uint16_t noSurfColor = 0x07FF;  // cyan (opposite of red)
+  uint16_t finColor = currentTheme.text;
 
   // Surfboard silhouette (pointed nose + rounded tail).
   gfx->fillCircle(x, y - 14, 10, boardColor);
@@ -111,7 +113,7 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   gfx->fillTriangle(x + 4, y + 22, x + 8, y + 22, x + 6, y + 31, finColor);
 
   // Board stringer for readability against brighter themes.
-  gfx->drawLine(x, y - 22, x, y + 28, currentTheme.background);
+  gfx->drawLine(x, y - 22, x, y + 28, color);
 
   // Prohibition marker (circle + slash) over the board.
   int16_t ringRadius = 30;
@@ -175,9 +177,9 @@ void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &them
   waveButton = {int16_t(startX + btnW + gap), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
   drawButton(waveButton, "Wave", currentTheme.buttonDanger, currentTheme.text, 1);
   
-  // Bottom-right: Reset Tide
+  // Bottom-right: Reset All
   tideButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
-  drawButton(tideButton, "Tide", currentTheme.tideButtonColor, currentTheme.text, 1);
+  drawButton(tideButton, "Reset", currentTheme.tideButtonColor, currentTheme.text, 1);
 }
 
 void drawSettingsButton(Rect &settingsButton) {
@@ -223,7 +225,7 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
   
   // Row 3
   tideButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
-  drawButton(tideButton, "Reset Tide", currentTheme.tideButtonColor, currentTheme.text, 2);
+  drawButton(tideButton, "Reset All", currentTheme.tideButtonColor, currentTheme.text, 2);
   
   // Back button
   backButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
@@ -360,23 +362,23 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
     gfx->print(tideText[i]);
   }
   
-  // Draw tide direction arrow
+  // Draw tide direction arrow - positioned in the center of the screen
   if (tideDirection != 0) {
-    int16_t arrowCenterX = tideX + tideBarW / 2;
-    int16_t arrowSize = 5;
+    int16_t arrowCenterX = 240;  // Center of 480px wide screen
+    int16_t arrowSize = 6;
     uint16_t arrowColor = currentTheme.periodDirTextColor;
     
     if (tideDirection > 0) {
-      // Rising tide - arrow above "TIDE" text
-      int16_t arrowY = startY - 8;
+      // Rising tide - arrow pointing up
+      int16_t arrowY = tideBarY + 8;
       // Draw upward pointing triangle
       gfx->fillTriangle(arrowCenterX, arrowY - arrowSize,
                        arrowCenterX - arrowSize, arrowY + arrowSize,
                        arrowCenterX + arrowSize, arrowY + arrowSize,
                        arrowColor);
     } else {
-      // Falling tide - arrow below "TIDE" text
-      int16_t arrowY = startY + textHeight + 8;
+      // Falling tide - arrow pointing down
+      int16_t arrowY = tideBarY + 8;
       // Draw downward pointing triangle
       gfx->fillTriangle(arrowCenterX, arrowY + arrowSize,
                        arrowCenterX - arrowSize, arrowY - arrowSize,
