@@ -1,6 +1,8 @@
 #include "Display.h"
 #include "Config.h"
 #include "Theme.h"
+#include <SPIFFS.h>
+#include <FS.h>
 
 Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI, TFT_MISO);
 Arduino_GFX *gfx = new Arduino_ST7796(bus, TFT_RST, 1 /* rotation */, true /* IPS */, 320, 480, 0, 0, 0, 0);
@@ -195,7 +197,7 @@ void drawSettingsButton(Rect &settingsButton) {
   drawButton(settingsButton, "Settings", currentTheme.buttonPrimary, currentTheme.text, 1);
 }
 
-void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton) {
+void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton, Rect &filesButton) {
   gfx->fillScreen(currentTheme.background);
   
   // Title
@@ -229,8 +231,12 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
   tideButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
   drawButton(tideButton, "Reset All", currentTheme.tideButtonColor, currentTheme.text, 2);
   
-  // Back button
-  backButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
+  filesButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
+  drawButton(filesButton, "View Files", currentTheme.buttonList, currentTheme.text, 2);
+  
+  // Row 4
+  // Back button - centered at bottom
+  backButton = {int16_t(startX + (btnW + gap) / 2), int16_t(startY + (btnH + gap) * 3), int16_t(btnW), int16_t(btnH)};
   drawButton(backButton, "< Back", currentTheme.buttonSecondary, currentTheme.text, 2);
 }
 
@@ -419,4 +425,50 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->println(String(tideHeightFeet, 1) + "ft");
 
   drawSettingsButton(settingsButton);
+}
+
+void viewFilesScreen(Rect &backButton) {
+  gfx->fillScreen(currentTheme.background);
+  
+  // Title
+  gfx->setTextColor(currentTheme.textSecondary);
+  gfx->setTextSize(3);
+  gfx->setCursor(10, 10);
+  gfx->println("Stored Files");
+  
+  // List all files from SPIFFS
+  gfx->setTextColor(currentTheme.text);
+  gfx->setTextSize(1);
+  int16_t y = 50;
+  
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  int fileCount = 0;
+  
+  while (file && y < 280) {
+    String fileName = String(file.name());
+    size_t fileSize = file.size();
+    
+    gfx->setCursor(10, y);
+    gfx->print(fileName);
+    gfx->setCursor(200, y);
+    gfx->print(String(fileSize) + " bytes");
+    
+    y += 12;
+    fileCount++;
+    file = root.openNextFile();
+  }
+  
+  if (fileCount == 0) {
+    gfx->setCursor(10, 50);
+    gfx->setTextColor(currentTheme.textSecondary);
+    gfx->println("No files found");
+  }
+  
+  // Back button at bottom
+  int btnW = 140;
+  int btnH = 40;
+  int startX = (gfx->width() - btnW) / 2;
+  backButton = {int16_t(startX), 270, int16_t(btnW), int16_t(btnH)};
+  drawButton(backButton, "< Back", currentTheme.buttonSecondary, currentTheme.text, 2);
 }

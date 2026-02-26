@@ -492,7 +492,7 @@ int handleMainScreenTouch(const Rect &settingsButton) {
 }
 
 int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, const Rect &forgetLocationButton, 
-                              const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
+                              const Rect &themeButton, const Rect &waveButton, const Rect &tideButton, const Rect &filesButton,
                               String &surfLocation, LocationInfo &cachedLocation, 
                               float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
                               String &tideLocationKey, bool &tideIsCalibrating,
@@ -555,6 +555,9 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
     showStatus("All settings reset", "Device will restart...", currentTheme.buttonWarning);
     delay(2000);
     ESP.restart();  // Restart to apply reset
+  }
+  if (pointInRect(p.x, p.y, filesButton)) {
+    return 5;  // View files screen
   }
   return 0;
 }

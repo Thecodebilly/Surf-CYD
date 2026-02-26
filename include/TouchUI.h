@@ -26,7 +26,7 @@ int selectDefaultLocation();
 // Main screen touch handling
 int handleMainScreenTouch(const Rect &settingsButton);
 int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, const Rect &forgetLocationButton, 
-                              const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
+                              const Rect &themeButton, const Rect &waveButton, const Rect &tideButton, const Rect &filesButton,
                               String &surfLocation, LocationInfo &cachedLocation, 
                               float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
                               String &tideLocationKey, bool &tideIsCalibrating,

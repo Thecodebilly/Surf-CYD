@@ -21,6 +21,7 @@ Rect forgetLocationButton = {0, 0, 0, 0};
 Rect themeButton = {0, 0, 0, 0};
 Rect waveButton = {0, 0, 0, 0};
 Rect tideButton = {0, 0, 0, 0};
+Rect filesButton = {0, 0, 0, 0};
 String surfLocation = "";
 int locationRetryCount = 0;
 int surfRetryCount = 0;
@@ -139,17 +140,17 @@ void loop() {
   surfRetryCount = 0;
   
   // Create location key from coordinates (rounded to 2 decimal places for consistency)
-  String currentLocationKey = String(cachedLocation.latitude, 2) + \",\" + String(cachedLocation.longitude, 2);
+  String currentLocationKey = String(cachedLocation.latitude, 2) + "," + String(cachedLocation.longitude, 2);
   
   // Check if location has changed - if so, delete all tide data
-  if (tideLocationKey != \"\" && tideLocationKey != currentLocationKey) {
-    logInfo(\"Location changed from \" + tideLocationKey + \" to \" + currentLocationKey + \". Resetting tide data.\");
+  if (tideLocationKey != "" && tideLocationKey != currentLocationKey) {
+    logInfo("Location changed from " + tideLocationKey + " to " + currentLocationKey + ". Resetting tide data.");
     deleteTideRange();
     deleteTideDirection();
     minTide = -1.0f;
     maxTide = 1.0f;
     tideTimestamp = 0;
-    tideLocationKey = \"\";
+    tideLocationKey = "";
     tideIsCalibrating = true;
     tideHeightOneHourAgo = 0.0f;
     tideDirectionTimestamp = 0;
@@ -166,12 +167,12 @@ void loop() {
     tideLocationKey = currentLocationKey;
     tideIsCalibrating = true;
     saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
-    logInfo(\"Started tide calibration at location: \" + tideLocationKey);
+    logInfo("Started tide calibration at location: " + tideLocationKey);
   } else if (tideIsCalibrating && (currentTime - tideTimestamp) >= 86400000) {
     // 24 hours have passed - calibration complete
     tideIsCalibrating = false;
     saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
-    logInfo(\"Tide calibration complete. Range: \" + String(minTide, 2) + \" to \" + String(maxTide, 2));
+    logInfo("Tide calibration complete. Range: " + String(minTide, 2) + " to " + String(maxTide, 2));
   } else if (tideIsCalibrating) {
     // Still calibrating - update min/max every reading
     bool updated = false;
@@ -185,7 +186,7 @@ void loop() {
     }
     if (updated) {
       saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
-      logInfo(\"Tide range updated during calibration: \" + String(minTide, 2) + \" to \" + String(maxTide, 2));
+      logInfo("Tide range updated during calibration: " + String(minTide, 2) + " to " + String(maxTide, 2));
     }
   }
   // If not calibrating, keep the established range (don't update)
@@ -220,7 +221,7 @@ void loop() {
   while (millis() - start < REFRESH_INTERVAL_MS) {
     if (inSettingsMode) {
       // Handle settings screen
-      int touchResult = handleSettingsScreenTouch(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton,
+      int touchResult = handleSettingsScreenTouch(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton,
                                                    surfLocation, cachedLocation, waveHeightThreshold, minTide, maxTide, tideTimestamp,
                                                    tideLocationKey, tideIsCalibrating,
                                                    tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
@@ -234,11 +235,24 @@ void loop() {
         break;
       } else if (touchResult == 2) {
         // Theme or Wave or Tide button: redraw settings screen
-        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton);
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton);
       } else if (touchResult == 4) {
         // Back button: exit settings
         inSettingsMode = false;
         drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection, tideIsCalibrating);
+      } else if (touchResult == 5) {
+        // View files button: show files screen
+        viewFilesScreen(backButton);
+        // Wait for back button touch
+        while (true) {
+          TouchPoint p = getTouchPoint();
+          if (p.pressed && pointInRect(p.x, p.y, backButton)) {
+            while (touch.touched()) delay(20);
+            drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton);
+            break;
+          }
+          delay(50);
+        }
       }
     } else {
       // Handle main screen
@@ -246,7 +260,7 @@ void loop() {
       if (touchResult == 3) {
         // Settings button: enter settings mode
         inSettingsMode = true;
-        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton);
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton);
       }
     }
     delay(50);
