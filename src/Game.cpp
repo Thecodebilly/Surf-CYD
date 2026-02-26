@@ -67,7 +67,29 @@ void runSurfGame(Rect &exitButton) {
     prevObstacleY[i] = -100;
     prevObstacleX[i] = 0;
   }
-  
+
+  // Coconut collectible — occasional bonus item worth +300 pts
+  const int16_t coconutRadius = 9;
+  int16_t coconutX = 0, coconutY = 0;
+  int16_t prevCoconutX = 0, prevCoconutY = -100;
+  bool coconutActive = false;
+  unsigned long lastCoconutSpawn = millis();
+  const unsigned long coconutInterval = 6000; // spawn every 6 seconds
+  // Colors (device inverts): 0x75DD displays as saddle brown, 0xE79F as near-black holes
+  const uint16_t coconutColor = 0x75DD;
+  const uint16_t coconutHoleColor = 0xE79F;
+  unsigned long coconutBonus = 0; // accumulated bonus points from collected coconuts
+
+  // Golden coconut — very rare, worth +500 pts
+  int16_t goldenX = 0, goldenY = 0;
+  int16_t prevGoldenX = 0, prevGoldenY = -100;
+  bool goldenActive = false;
+  unsigned long lastGoldenSpawn = millis();
+  const unsigned long goldenInterval = 35000; // spawn every 35 seconds
+  // 0x001F displays as gold/yellow on inverted display (~0xFFE0)
+  const uint16_t goldenColor = 0x001F;
+  const uint16_t goldenShineColor = 0x07E0; // displays as magenta ~0xF81F, subtle highlight ring
+
   unsigned long score = 0;
   unsigned long prevScore = 0;
   unsigned long lastSpawn = millis();
@@ -114,6 +136,8 @@ void runSurfGame(Rect &exitButton) {
   };
   uint16_t textColor = currentTheme.text;
   uint16_t surferColor = ~YELLOW;  // Inverted yellow (becomes blue)
+  // Board color: 0x02DF displays as orange (light), 0x77FF displays as dark red (dark)
+  uint16_t boardColor = darkMode ? 0x77FF : 0x02DF;
   uint16_t sharkColor = 0x7BEF;  // Opposite of mid-gray (0x8410)
   uint16_t exitBgColor = currentTheme.buttonDanger;
   uint16_t exitTextColor = currentTheme.text;
@@ -196,12 +220,148 @@ void runSurfGame(Rect &exitButton) {
         lastSpawn = millis();
       }
     }
-    
-    // Erase previous stick figure position
-    if (prevSurferX != surferX) {
-      // Erase previous stick figure with ocean color (rectangular area)
-      gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 8, surferSize * 2, surferSize + 12, currentOceanColor);
+
+    // Spawn coconut — one at a time, every ~6 seconds
+    if (!coconutActive && (millis() - lastCoconutSpawn > coconutInterval)) {
+      coconutX = random(coconutRadius + 5, screenWidth - coconutRadius - 5);
+      coconutY = -coconutRadius;
+      prevCoconutX = coconutX;
+      prevCoconutY = coconutY;
+      coconutActive = true;
+      lastCoconutSpawn = millis();
     }
+
+    // Update coconut
+    if (coconutActive) {
+      // Erase previous position
+      if (prevCoconutY >= -coconutRadius) {
+        int16_t eraseX = prevCoconutX - coconutRadius - 1;
+        int16_t eraseTop = prevCoconutY - coconutRadius - 1;
+        int16_t eraseW = (coconutRadius * 2) + 3;
+        int16_t eraseH = (coconutRadius * 2) + 3;
+        int16_t boundary = surferY - 15;
+        if (eraseTop < boundary && (eraseTop + eraseH) > boundary) {
+          int16_t topH = boundary - eraseTop;
+          gfx->fillRect(eraseX, eraseTop, eraseW, topH, currentBgColor);
+          gfx->fillRect(eraseX, boundary, eraseW, eraseH - topH, currentOceanColor);
+        } else {
+          uint16_t ec = (prevCoconutY >= boundary) ? currentOceanColor : currentBgColor;
+          gfx->fillRect(eraseX, eraseTop, eraseW, eraseH, ec);
+        }
+      }
+      coconutY += obstacleSpeed;
+      if (coconutY > screenHeight + coconutRadius) {
+        // Missed — reset spawn timer so next coconut comes after another interval
+        coconutActive = false;
+        lastCoconutSpawn = millis();
+      } else {
+        // Draw coconut: brown circle with 3 dark pore holes
+        gfx->fillCircle(coconutX, coconutY, coconutRadius, coconutColor);
+        gfx->fillCircle(coconutX,     coconutY - 3, 2, coconutHoleColor); // top hole
+        gfx->fillCircle(coconutX - 3, coconutY + 2, 2, coconutHoleColor); // bottom-left
+        gfx->fillCircle(coconutX + 3, coconutY + 2, 2, coconutHoleColor); // bottom-right
+
+        // Collect coconut — AABB with surfer
+        int16_t playerLeft   = surferX - surferSize/2;
+        int16_t playerRight  = surferX + surferSize/2;
+        int16_t playerTop    = surferY - surferSize - 8;
+        int16_t playerBottom = surferY + 4;
+        if (playerRight > (coconutX - coconutRadius) && playerLeft < (coconutX + coconutRadius) &&
+            playerBottom > (coconutY - coconutRadius) && playerTop < (coconutY + coconutRadius)) {
+          coconutBonus += 200;
+          // Erase coconut immediately on collect
+          int16_t eraseX  = coconutX - coconutRadius - 1;
+          int16_t eraseTop = coconutY - coconutRadius - 1;
+          int16_t eraseW   = (coconutRadius * 2) + 3;
+          int16_t eraseH   = (coconutRadius * 2) + 3;
+          int16_t boundary = surferY - 15;
+          if (eraseTop < boundary && (eraseTop + eraseH) > boundary) {
+            int16_t topH = boundary - eraseTop;
+            gfx->fillRect(eraseX, eraseTop, eraseW, topH, currentBgColor);
+            gfx->fillRect(eraseX, boundary, eraseW, eraseH - topH, currentOceanColor);
+          } else {
+            uint16_t ec = (coconutY >= boundary) ? currentOceanColor : currentBgColor;
+            gfx->fillRect(eraseX, eraseTop, eraseW, eraseH, ec);
+          }
+          coconutActive = false;
+          lastCoconutSpawn = millis();
+        }
+      }
+      prevCoconutX = coconutX;
+      prevCoconutY = coconutY;
+    }
+
+    // Spawn golden coconut — very rare, every ~25 seconds
+    if (!goldenActive && (millis() - lastGoldenSpawn > goldenInterval)) {
+      goldenX = random(coconutRadius + 5, screenWidth - coconutRadius - 5);
+      goldenY = -coconutRadius;
+      prevGoldenX = goldenX;
+      prevGoldenY = goldenY;
+      goldenActive = true;
+      lastGoldenSpawn = millis();
+    }
+
+    // Update golden coconut
+    if (goldenActive) {
+      if (prevGoldenY >= -coconutRadius) {
+        int16_t eraseX   = prevGoldenX - coconutRadius - 1;
+        int16_t eraseTop = prevGoldenY - coconutRadius - 1;
+        int16_t eraseW   = (coconutRadius * 2) + 3;
+        int16_t eraseH   = (coconutRadius * 2) + 3;
+        int16_t boundary = surferY - 15;
+        if (eraseTop < boundary && (eraseTop + eraseH) > boundary) {
+          int16_t topH = boundary - eraseTop;
+          gfx->fillRect(eraseX, eraseTop, eraseW, topH, currentBgColor);
+          gfx->fillRect(eraseX, boundary, eraseW, eraseH - topH, currentOceanColor);
+        } else {
+          uint16_t ec = (prevGoldenY >= boundary) ? currentOceanColor : currentBgColor;
+          gfx->fillRect(eraseX, eraseTop, eraseW, eraseH, ec);
+        }
+      }
+      goldenY += obstacleSpeed;
+      if (goldenY > screenHeight + coconutRadius) {
+        goldenActive = false;
+        lastGoldenSpawn = millis();
+      } else {
+        // Draw golden coconut: gold circle, subtle outline ring, 3 dark pore holes
+        gfx->fillCircle(goldenX, goldenY, coconutRadius, goldenColor);
+        gfx->drawCircle(goldenX, goldenY, coconutRadius, goldenShineColor);
+        gfx->fillCircle(goldenX,     goldenY - 3, 2, coconutHoleColor);
+        gfx->fillCircle(goldenX - 3, goldenY + 2, 2, coconutHoleColor);
+        gfx->fillCircle(goldenX + 3, goldenY + 2, 2, coconutHoleColor);
+
+        // Collect
+        int16_t playerLeft   = surferX - surferSize/2;
+        int16_t playerRight  = surferX + surferSize/2;
+        int16_t playerTop    = surferY - surferSize - 8;
+        int16_t playerBottom = surferY + 4;
+        if (playerRight > (goldenX - coconutRadius) && playerLeft < (goldenX + coconutRadius) &&
+            playerBottom > (goldenY - coconutRadius) && playerTop < (goldenY + coconutRadius)) {
+          coconutBonus += 500;
+          int16_t eraseX   = goldenX - coconutRadius - 1;
+          int16_t eraseTop = goldenY - coconutRadius - 1;
+          int16_t eraseW   = (coconutRadius * 2) + 3;
+          int16_t eraseH   = (coconutRadius * 2) + 3;
+          int16_t boundary = surferY - 15;
+          if (eraseTop < boundary && (eraseTop + eraseH) > boundary) {
+            int16_t topH = boundary - eraseTop;
+            gfx->fillRect(eraseX, eraseTop, eraseW, topH, currentBgColor);
+            gfx->fillRect(eraseX, boundary, eraseW, eraseH - topH, currentOceanColor);
+          } else {
+            uint16_t ec = (goldenY >= boundary) ? currentOceanColor : currentBgColor;
+            gfx->fillRect(eraseX, eraseTop, eraseW, eraseH, ec);
+          }
+          goldenActive = false;
+          lastGoldenSpawn = millis();
+        }
+      }
+      prevGoldenX = goldenX;
+      prevGoldenY = goldenY;
+    }
+
+    // Erase previous stick figure + board position every frame to prevent ghosting
+    // Height extended to cover board below feet (~28px below surferY)
+    gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 8, surferSize * 2, surferSize + 38, currentOceanColor);
     
     // Update and draw shark fins
     for (int i = 0; i < maxObstacles; i++) {
@@ -262,6 +422,16 @@ void runSurfGame(Rect &exitButton) {
     }
     
     // Draw stick figure at new position
+    // Surfboard under feet (no fins) — drawn first so figure sits on top
+    {
+      const int16_t bHW = 7;    // half-width of board
+      const int16_t bBodyH = 14; // length of straight section
+      int16_t bTopY = surferY + 4; // top-cap center, just below feet
+      gfx->fillCircle(surferX, bTopY,          bHW, boardColor); // nose
+      gfx->fillRect(surferX - bHW, bTopY,      bHW * 2 + 1, bBodyH, boardColor); // body
+      gfx->fillCircle(surferX, bTopY + bBodyH, bHW, boardColor); // tail
+      gfx->drawLine(surferX, bTopY - bHW, surferX, bTopY + bBodyH + bHW, surferColor); // stringer
+    }
     // Head
     gfx->fillCircle(surferX, surferY - surferSize, 3, surferColor);
     // Body (vertical line)
@@ -275,8 +445,8 @@ void runSurfGame(Rect &exitButton) {
     
     prevSurferX = surferX;
     
-    // Update score based on time
-    score = (millis() - gameStart) / 100;
+    // Update score based on time + accumulated coconut bonuses
+    score = (millis() - gameStart) / 100 + coconutBonus;
     
     // Only redraw score if it changed
     if (score != prevScore) {
@@ -323,11 +493,11 @@ void runSurfGame(Rect &exitButton) {
       
       // Keep surfer on screen
       surferX = constrain(surferX, surferSize, screenWidth - surferSize);
-      
-      delay(5);  // Reduced from 10 for even more responsive controls
+
+      delay(5);  // Touch responsiveness
     }
-    
-    delay(10); // ~60 FPS - reduced from 20ms for smoother gameplay
+
+    delay(10); // ~100 FPS cap — prevents ESP32 from busy-looping flat out
   }
   
   // Check and update high score
@@ -469,19 +639,11 @@ void showLeaderboard() {
   const int16_t screenWidth = gfx->width();
   const int16_t screenHeight = gfx->height();
   
-  // Swap schema by mode: dark mode uses theme as-is, light mode uses inverted
-  uint16_t bgColor, textColor, accentColor, secondaryColor;
-  if (darkMode) {
-    bgColor        = currentTheme.background;
-    textColor      = currentTheme.text;
-    accentColor    = currentTheme.accent;
-    secondaryColor = currentTheme.textSecondary;
-  } else {
-    bgColor        = ~currentTheme.background;
-    textColor      = ~currentTheme.text;
-    accentColor    = ~currentTheme.accent;
-    secondaryColor = ~currentTheme.textSecondary;
-  }
+  // Use theme colors directly — display hardware handles inversion for both modes
+  uint16_t bgColor        = currentTheme.background;
+  uint16_t textColor      = currentTheme.text;
+  uint16_t accentColor    = currentTheme.accent;
+  uint16_t secondaryColor = currentTheme.textSecondary;
   
   // Clear screen with inverted background
   gfx->fillScreen(bgColor);
