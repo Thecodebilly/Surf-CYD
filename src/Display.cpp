@@ -103,24 +103,26 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   uint16_t noSurfColor = 0x07FF;  // cyan (opposite of red)
   uint16_t finColor = currentTheme.text;
 
-  // Surfboard silhouette (pointed nose + rounded tail).
-  gfx->fillCircle(x, y - 14, 10, boardColor);
-  gfx->fillRect(x - 10, y - 14, 21, 34, boardColor);
-  gfx->fillCircle(x, y + 20, 10, boardColor);
+  // Surfboard silhouette (pointed nose + rounded tail) - scaled 44% larger than original
+  gfx->fillCircle(x, y - 20, 14, boardColor);
+  gfx->fillRect(x - 14, y - 20, 29, 49, boardColor);
+  gfx->fillCircle(x, y + 29, 14, boardColor);
 
   // Twin fins (skinny triangles) to make the board shape clearer.
-  gfx->fillTriangle(x - 8, y + 22, x - 4, y + 22, x - 6, y + 31, finColor);
-  gfx->fillTriangle(x + 4, y + 22, x + 8, y + 22, x + 6, y + 31, finColor);
+  gfx->fillTriangle(x - 11, y + 32, x - 7, y + 32, x - 9, y + 45, finColor);
+  gfx->fillTriangle(x + 7, y + 32, x + 11, y + 32, x + 9, y + 45, finColor);
 
   // Board stringer for readability against brighter themes.
-  gfx->drawLine(x, y - 22, x, y + 28, color);
+  gfx->drawLine(x, y - 31, x, y + 40, color);
 
   // Prohibition marker (circle + slash) over the board.
-  int16_t ringRadius = 30;
-  gfx->drawCircle(x, y + 2, ringRadius, noSurfColor);
-  gfx->drawCircle(x, y + 2, ringRadius - 1, noSurfColor);
-  gfx->drawLine(x - 20, y + 22, x + 20, y - 18, noSurfColor);
-  gfx->drawLine(x - 19, y + 22, x + 21, y - 18, noSurfColor);
+  int16_t ringRadius = 47;
+  gfx->drawCircle(x, y + 7, ringRadius, noSurfColor);
+  gfx->drawCircle(x, y + 7, ringRadius - 1, noSurfColor);
+  gfx->drawCircle(x, y + 7, ringRadius - 2, noSurfColor);
+  gfx->drawLine(x - 32, y + 39, x + 32, y - 24, noSurfColor);
+  gfx->drawLine(x - 31, y + 39, x + 33, y - 24, noSurfColor);
+  gfx->drawLine(x - 30, y + 39, x + 34, y - 24, noSurfColor);
 }
 
 
@@ -279,7 +281,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   if (happy) {
     drawGoodSurfGraphic(w - 78, 130, currentTheme.accent);
   } else {
-    drawBadSurfGraphic(w - 78, 130, accent);
+    drawBadSurfGraphic(w - 133, 140, accent);
   }
 
   // Middle data row
@@ -290,7 +292,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(5);
   gfx->setCursor(10, 228);
-  gfx->println(String(forecast.wavePeriod, 1) + " s");
+  gfx->println(String(forecast.wavePeriod, 1) + "s");
 
   int16_t windLabelX = 184;  // Moved 100 pixels left from 284
   int16_t windValueX = windLabelX;
@@ -302,7 +304,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(5);
   gfx->setCursor(windValueX, 228);
-  gfx->println(String(forecast.windSpeed, 1) + " mph");
+  gfx->println(String(forecast.windSpeed, 1) + "mph");
 
   // Bottom row: arrows and tide
   const int16_t labelY = 252;
@@ -348,6 +350,14 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
     gfx->fillRect(tideX + 2, tideBarY + tideBarH - 2 - fillHeight, tideBarW - 4, fillHeight, tideFillColor);
   }
   
+  // Display min and max tide values above the tide box
+  gfx->setTextColor(currentTheme.periodDirTextColor);
+  gfx->setTextSize(1);
+  gfx->setCursor(tideX - 5, tideBarY - 21);
+  gfx->print(String(minTide, 1));
+  gfx->print("/");
+  gfx->print(String(maxTide, 1));
+  
   // Draw "TIDE" text vertically centered in the tide bar
   gfx->setTextColor(currentTheme.periodDirTextColor);
   gfx->setTextSize(1);
@@ -363,28 +373,27 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   }
   
   // Draw tide direction arrow - positioned above or below the text in the tide bar
-  if (tideDirection != 0) {
-    int16_t arrowCenterX = tideX + tideBarW / 2;
-    int16_t arrowSize = 4;
-    uint16_t arrowColor = darkMode ? BLACK : WHITE;
-    
-    if (tideDirection > 0) {
-      // Rising tide - arrow above text
-      int16_t arrowY = startY - 10;
-      // Draw upward pointing triangle
-      gfx->fillTriangle(arrowCenterX, arrowY - arrowSize,
-                       arrowCenterX - arrowSize, arrowY + arrowSize,
-                       arrowCenterX + arrowSize, arrowY + arrowSize,
-                       arrowColor);
-    } else {
-      // Falling tide - arrow below text
-      int16_t arrowY = startY + textHeight + 10;
-      // Draw downward pointing triangle
-      gfx->fillTriangle(arrowCenterX, arrowY + arrowSize,
-                       arrowCenterX - arrowSize, arrowY - arrowSize,
-                       arrowCenterX + arrowSize, arrowY - arrowSize,
-                       arrowColor);
-    }
+  // Always displayed for testing
+  int16_t arrowCenterX = tideX + tideBarW / 2;
+  int16_t arrowSize = 3;
+  uint16_t arrowColor = darkMode ? BLACK : WHITE;
+  
+  if (tideDirection > 0) {
+    // Rising tide - arrow above text
+    int16_t arrowY = startY - 10;
+    // Draw upward pointing triangle
+    gfx->fillTriangle(arrowCenterX, arrowY - arrowSize,
+                     arrowCenterX - arrowSize, arrowY + arrowSize,
+                     arrowCenterX + arrowSize, arrowY + arrowSize,
+                     arrowColor);
+  } else {
+    // Falling tide - arrow below text
+    int16_t arrowY = startY + textHeight + 10;
+    // Draw downward pointing triangle
+    gfx->fillTriangle(arrowCenterX, arrowY + arrowSize,
+                     arrowCenterX - arrowSize, arrowY - arrowSize,
+                     arrowCenterX + arrowSize, arrowY - arrowSize,
+                     arrowColor);
   }
   
   // Display tide height in feet below the bar
