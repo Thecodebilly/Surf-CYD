@@ -51,15 +51,23 @@ void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   uint16_t surferColor = invert565(currentTheme.background);
 
   // Rising sun
-  gfx->fillCircle(x + 20, y - 34, 16, skyColor);
-  for (int i = 0; i < 7; i++) {
-    float angle = (-0.25f + i * 0.25f) * PI;
-    int16_t x1 = x + 20 + cos(angle) * 20;
-    int16_t y1 = y - 34 + sin(angle) * 20;
-    int16_t x2 = x + 20 + cos(angle) * 30;
-    int16_t y2 = y - 34 + sin(angle) * 30;
-    gfx->drawLine(x1, y1, x2, y2, skyColor);
-  }
+    // Rising sun (bitwise inverted yellow)
+    uint16_t sunColor = 0x001F; // ~0xFFE0 = 0x001F (blue in RGB565)
+    gfx->fillCircle(x + 20, y - 34, 16, sunColor);
+    for (int i = 0; i < 7; i++) {
+      float angle = (-0.25f + i * 0.25f) * PI;
+      int16_t x1 = x + 20 + cos(angle) * 20;
+      int16_t y1 = y - 34 + sin(angle) * 20;
+      int16_t x2 = x + 20 + cos(angle) * 30;
+      int16_t y2 = y - 34 + sin(angle) * 30;
+      gfx->drawLine(x1, y1, x2, y2, sunColor);
+    }
+    // Add one more ray directly on top
+    int16_t x1_top = x + 20;
+    int16_t y1_top = y - 34 - 20;
+    int16_t x2_top = x + 20;
+    int16_t y2_top = y - 34 - 30;
+    gfx->drawLine(x1_top, y1_top, x2_top, y2_top, sunColor);
 
   // Clean wave face and lip
   gfx->fillCircle(x - 10, y + 10, 42, seaColor);
@@ -88,38 +96,29 @@ void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 }
 
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
-  // Storm front + choppy closeout + warning buoy
-  uint16_t stormColor = color;
+  // Blown-out conditions: yellow storm cloud and choppy closeout lines.
+  (void)color;
+    // Storm cloud (bitwise inverted grey)
+    uint16_t stormColor = 0x7BEF; // ~0x8410 = 0x7BEF (yellowish-white in RGB565)
   uint16_t chopColor = currentTheme.cloudColor;
-  uint16_t lightningColor = currentTheme.text;
-  uint16_t buoyColor = currentTheme.background;
 
-  // Dark cloud shelf
-  gfx->fillCircle(x - 24, y - 10, 16, stormColor);
-  gfx->fillCircle(x - 2, y - 18, 20, stormColor);
-  gfx->fillCircle(x + 24, y - 10, 16, stormColor);
-  gfx->fillRect(x - 40, y - 10, 80, 20, stormColor);
+  // Heavy storm cloud.
+  gfx->fillCircle(x - 28, y - 16, 14, stormColor);
+  gfx->fillCircle(x - 6, y - 22, 18, stormColor);
+  gfx->fillCircle(x + 20, y - 16, 14, stormColor);
+  gfx->fillRect(x - 42, y - 16, 84, 20, stormColor);
+  gfx->drawLine(x - 42, y + 4, x + 42, y + 4, chopColor);
 
-  // Lightning bolt
-  gfx->fillTriangle(x - 4, y + 2, x + 10, y + 2, x - 2, y + 24, lightningColor);
-  gfx->fillTriangle(x - 2, y + 24, x + 7, y + 24, x - 9, y + 44, lightningColor);
-
-  // Choppy wave lines
+  // Closeout bars/chop.
   for (int i = 0; i < 4; i++) {
-    int16_t yOff = y + 20 + i * 8;
-    gfx->drawLine(x - 40, yOff, x - 24, yOff - 5, chopColor);
-    gfx->drawLine(x - 24, yOff - 5, x - 8, yOff, chopColor);
-    gfx->drawLine(x - 8, yOff, x + 8, yOff - 5, chopColor);
-    gfx->drawLine(x + 8, yOff - 5, x + 24, yOff, chopColor);
-    gfx->drawLine(x + 24, yOff, x + 40, yOff - 4, chopColor);
+    int16_t yOff = y + 18 + i * 9;
+    gfx->drawLine(x - 42, yOff, x - 26, yOff - 6, chopColor);
+    gfx->drawLine(x - 26, yOff - 6, x - 10, yOff, chopColor);
+    gfx->drawLine(x - 10, yOff, x + 6, yOff - 6, chopColor);
+    gfx->drawLine(x + 6, yOff - 6, x + 22, yOff, chopColor);
+    gfx->drawLine(x + 22, yOff, x + 42, yOff - 5, chopColor);
   }
-
-  // Warning buoy with X mark
-  gfx->fillCircle(x - 28, y + 38, 8, buoyColor);
-  gfx->drawLine(x - 32, y + 34, x - 24, y + 42, stormColor);
-  gfx->drawLine(x - 24, y + 34, x - 32, y + 42, stormColor);
 }
-
 
 
 void drawDirectionArrow(int16_t cx, int16_t cy, int16_t length, float degrees, uint16_t color) {
@@ -255,7 +254,8 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   const int16_t windCenterX = windLabelX + 65;
 
   drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection + 180.0f, YELLOW);
-  drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection + 180.0f, BLACK);
+  uint16_t windArrowColor = darkMode ? BLACK : WHITE;
+  drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection + 180.0f, windArrowColor);
 
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(3);

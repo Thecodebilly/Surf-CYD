@@ -362,7 +362,9 @@ float runWaveHeightSetupTouch() {
       return selectedThreshold;
     } else if (pointInRect(p.x, p.y, skipButton)) {
       while (touch.touched()) delay(20);
-      return selectedThreshold;  // Return default
+      selectedThreshold = 3.0f;
+      saveWaveHeightPreference(selectedThreshold);
+      return selectedThreshold;
     }
 
     while (touch.touched()) delay(20);
