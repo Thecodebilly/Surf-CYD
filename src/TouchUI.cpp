@@ -482,9 +482,9 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
 }
 
 int handleMainScreenTouch(const Rect &forgetButton, const Rect &forgetLocationButton, 
-                          const Rect &themeButton, const Rect &waveButton,
+                          const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
                           String &surfLocation, LocationInfo &cachedLocation, 
-                          float &waveHeightThreshold) {
+                          float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp) {
   TouchPoint p = getTouchPoint();
   if (!p.pressed) return 0;
 
@@ -515,6 +515,15 @@ int handleMainScreenTouch(const Rect &forgetButton, const Rect &forgetLocationBu
     delay(1200);
     waveHeightThreshold = runWaveHeightSetupTouch();
     return 2;  // Display only - don't clear location, just redraw
+  }
+  if (pointInRect(p.x, p.y, tideButton)) {
+    deleteTideRange();
+    minTide = -1.0f;
+    maxTide = 1.0f;
+    tideTimestamp = 0;
+    showStatus("Tide range reset", "Will recalibrate over 24h", currentTheme.buttonWarning);
+    delay(1200);
+    return 2;  // Display only - just redraw
   }
   return 0;
 }

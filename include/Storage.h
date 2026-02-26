@@ -15,6 +15,7 @@ void deleteWifiCredentials();
 // Theme preference storage
 bool saveThemePreference(bool isDark);
 bool loadThemePreference();
+void deleteThemePreference();
 
 // Wave height preference storage
 bool saveWaveHeightPreference(float threshold);
@@ -25,5 +26,10 @@ void deleteWaveHeightPreference();
 bool saveSurfLocation(const LocationInfo &locInfo);
 LocationInfo loadSurfLocationInfo();
 void deleteSurfLocation();
+
+// Tide range storage
+bool saveTideRange(float minTide, float maxTide, unsigned long timestamp);
+void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp);
+void deleteTideRange();
 
 #endif // STORAGE_H

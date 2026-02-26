@@ -150,8 +150,8 @@ void drawDirectionArrow(int16_t cx, int16_t cy, int16_t length, float degrees, u
   gfx->drawLine(endX, endY, rightX, rightY, color);
 }
 
-void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton) {
-  // 2x2 grid layout in top right
+void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton) {
+  // 2x3 grid layout in top right (added tide button below wave)
   int btnW = 68;
   int btnH = 20;
   int gap = 1;
@@ -166,18 +166,22 @@ void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &them
   themeButton = {int16_t(startX + btnW + gap), int16_t(startY), int16_t(btnW), int16_t(btnH)};
   drawButton(themeButton, darkMode ? "Light" : "Dark", currentTheme.text, currentTheme.background, 1);
   
-  // Bottom-left: Forget Location
+  // Middle-left: Forget Location
   forgetLocationButton = {int16_t(startX), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
   drawButton(forgetLocationButton, "Loc", currentTheme.buttonWarning, currentTheme.text, 1);
   
-  // Bottom-right: Reset Wave
+  // Middle-right: Reset Wave
   waveButton = {int16_t(startX + btnW + gap), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
   drawButton(waveButton, "Wave", currentTheme.buttonDanger, currentTheme.text, 1);
+  
+  // Bottom (spanning both columns): Reset Tide
+  tideButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW * 2 + gap), int16_t(btnH)};
+  drawButton(tideButton, "Tide", currentTheme.buttonSecondary, currentTheme.text, 1);
 }
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
-                  Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton,
-                  float waveHeightThreshold) {
+                  Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton,
+                  float waveHeightThreshold, float minTide, float maxTide) {
   gfx->fillScreen(currentTheme.background);
   int16_t w = gfx->width();
 
@@ -235,7 +239,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setCursor(10, 228);
   gfx->println(String(forecast.wavePeriod, 1) + " s");
 
-  int16_t windLabelX = 234;
+  int16_t windLabelX = 184;  // Moved 100 pixels left from 284
   int16_t windValueX = windLabelX;
 
   gfx->setTextColor(currentTheme.periodDirTextColor);
@@ -247,11 +251,11 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setCursor(windValueX, 228);
   gfx->println(String(forecast.windSpeed, 1) + " mph");
 
-  // Bottom two-arrow strip
+  // Bottom row: arrows and tide
   const int16_t labelY = 252;
   const int16_t arrowY = 292;
   const int16_t swellCenterX = 90;
-  const int16_t windCenterX = windLabelX + 65;
+  const int16_t windCenterX = windLabelX + 65;  // Will be 249
 
   drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection + 180.0f, YELLOW);
   uint16_t windArrowColor = darkMode ? BLACK : WHITE;
@@ -263,8 +267,54 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->println(String(forecast.waveDirection, 0) + (char)248);
 
   gfx->setTextColor(currentTheme.accent);
-  gfx->setCursor(325, 360);
+  gfx->setCursor(275, 360);  // Moved 100 pixels left from 375
   gfx->println(String(forecast.windDirection, 0) + (char)248);
 
-  drawForgetButton(forgetButton, forgetLocationButton, themeButton, waveButton);
+  // Tide bar (vertical) - positioned to the right of wind arrow
+  const int16_t tideX = 420;  // Moved right 15 pixels
+  const int16_t tideBarY = 195;  // Moved down 10 pixels
+  const int16_t tideBarW = 45;  // 10% wider than 41
+  const int16_t tideBarH = 96;  // 20% less than 120
+  
+  // Draw tide bar outline with mode-appropriate color
+  uint16_t tideOutlineColor = darkMode ? BLACK : WHITE;
+  gfx->drawRect(tideX, tideBarY, tideBarW, tideBarH, tideOutlineColor);
+  
+  // Normalize tide height to 0-1 range using actual min/max
+  float tideRange = maxTide - minTide;
+  float tideNormalized = 0.5f;  // Default to middle
+  if (tideRange > 0.01f) {  // Avoid division by zero
+    tideNormalized = (forecast.tideHeight - minTide) / tideRange;
+    tideNormalized = max(0.0f, min(1.0f, tideNormalized));
+  }
+  
+  // Fill the bar from bottom to top based on tide height with mode-appropriate color
+  uint16_t tideFillColor = darkMode ? YELLOW : 0xFD20;  // Yellow in dark mode, orange in light mode
+  int16_t fillHeight = (int16_t)(tideNormalized * (tideBarH - 4));
+  if (fillHeight > 0) {
+    gfx->fillRect(tideX + 2, tideBarY + tideBarH - 2 - fillHeight, tideBarW - 4, fillHeight, tideFillColor);
+  }
+  
+  // Draw "TIDE" text vertically centered in the tide bar
+  gfx->setTextColor(currentTheme.periodDirTextColor);
+  gfx->setTextSize(1);
+  const char* tideText = "TIDE";
+  int16_t charSpacing = 10;
+  int16_t charWidth = 6;  // Font size 1 character width
+  int16_t textHeight = 4 * charSpacing;  // Total height of 4 characters
+  int16_t startY = tideBarY + (tideBarH - textHeight) / 2;
+  int16_t textX = tideX + (tideBarW - charWidth) / 2;
+  for (int i = 0; i < 4; i++) {
+    gfx->setCursor(textX, startY + i * charSpacing);
+    gfx->print(tideText[i]);
+  }
+  
+  // Display tide height in feet below the bar
+  float tideHeightFeet = forecast.tideHeight * 3.28084f;
+  gfx->setTextColor(currentTheme.periodDirNumberColor);
+  gfx->setTextSize(2);
+  gfx->setCursor(tideX - 5, tideBarY + tideBarH + 8);
+  gfx->println(String(tideHeightFeet, 1) + "ft");
+
+  drawForgetButton(forgetButton, forgetLocationButton, themeButton, waveButton, tideButton);
 }

@@ -16,6 +16,7 @@ extern const char *WIFI_FILE;
 extern const char *LOCATION_FILE;
 extern const char *THEME_FILE;
 extern const char *WAVE_PREF_FILE;
+extern const char *TIDE_RANGE_FILE;
 
 // TFT Display pins
 #define TFT_CS 15

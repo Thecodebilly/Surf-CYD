@@ -16,6 +16,7 @@ struct SurfForecast {
   float waveDirection = 0.0f;
   float windSpeed = 0.0f;
   float windDirection = 0.0f;
+  float tideHeight = 0.0f;
   String timeLabel = "";
   bool valid = false;
 };

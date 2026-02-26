@@ -110,7 +110,12 @@ bool loadThemePreference() {
   logInfo(String("Loaded theme: ") + (isDark ? "dark" : "light"));
   return isDark;
 }
-
+void deleteThemePreference() {
+  if (SPIFFS.exists(THEME_FILE)) {
+    SPIFFS.remove(THEME_FILE);
+    logInfo("Deleted saved theme preference.");
+  }
+}
 bool saveWaveHeightPreference(float threshold) {
   DynamicJsonDocument doc(256);
   doc["threshold"] = threshold;
@@ -223,3 +228,62 @@ void deleteSurfLocation() {
     logInfo("Deleted saved surf location.");
   }
 }
+
+bool saveTideRange(float minTide, float maxTide, unsigned long timestamp) {
+  DynamicJsonDocument doc(256);
+  doc["minTide"] = minTide;
+  doc["maxTide"] = maxTide;
+  doc["timestamp"] = timestamp;
+
+  File f = SPIFFS.open(TIDE_RANGE_FILE, FILE_WRITE);
+  if (!f) {
+    logError("Failed to open tide range file for write.");
+    return false;
+  }
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write tide range file.");
+    f.close();
+    return false;
+  }
+  f.close();
+  logInfo("Saved tide range to SPIFFS.");
+  return true;
+}
+
+void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp) {
+  minTide = -1.0f;
+  maxTide = 1.0f;
+  timestamp = 0;
+
+  if (!SPIFFS.exists(TIDE_RANGE_FILE)) {
+    logInfo("No saved tide range.");
+    return;
+  }
+
+  File f = SPIFFS.open(TIDE_RANGE_FILE, FILE_READ);
+  if (!f) {
+    logError("Failed to open tide range file for read.");
+    return;
+  }
+
+  DynamicJsonDocument doc(256);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    logError("Failed to parse tide range file.");
+    return;
+  }
+
+  minTide = doc["minTide"] | -1.0f;
+  maxTide = doc["maxTide"] | 1.0f;
+  timestamp = doc["timestamp"] | 0UL;
+  logInfo(String("Loaded tide range: ") + String(minTide, 2) + " to " + String(maxTide, 2));
+}
+
+void deleteTideRange() {
+  if (SPIFFS.exists(TIDE_RANGE_FILE)) {
+    SPIFFS.remove(TIDE_RANGE_FILE);
+    logInfo("Deleted saved tide range.");
+  }
+}
+

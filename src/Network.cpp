@@ -103,7 +103,7 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
 
   // Fetch wave data from Marine API
   HTTPClient http;
-  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wave_height,wave_period,wave_direction&timezone=auto";
+  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wave_height,wave_period,wave_direction,sea_level_height_msl&timezone=auto";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(url);
   int code = http.GET();
@@ -121,6 +121,7 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   JsonArray heights = doc["hourly"]["wave_height"];
   JsonArray periods = doc["hourly"]["wave_period"];
   JsonArray directions = doc["hourly"]["wave_direction"];
+  JsonArray seaLevels = doc["hourly"]["sea_level_height_msl"];
   if (times.isNull() || heights.isNull() || periods.isNull() || directions.isNull() || times.size() == 0) {
     return forecast;
   }
@@ -129,6 +130,7 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   forecast.waveHeight = heights[0] | 0.0f;
   forecast.wavePeriod = periods[0] | 0.0f;
   forecast.waveDirection = directions[0] | 0.0f;
+  forecast.tideHeight = (!seaLevels.isNull() && seaLevels.size() > 0) ? (seaLevels[0] | 0.0f) : 0.0f;
 
   // Fetch wind data from Weather Forecast API
   url = String(WEATHER_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=mph&timezone=auto";
