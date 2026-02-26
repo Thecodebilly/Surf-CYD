@@ -86,14 +86,15 @@ void runSurfGame(Rect &exitButton) {
   
   // Game colors based on mode
   // Dark mode bg = opposite of dark blue/purple (0x0814) = 0xF7EB (warm light)
-  // Light mode bg = wave = opposite of medium blue (0x031F) = 0xFCE0 (amber, they blend)
+  // Light mode: bgColor displays as darker ocean blue (0x1C9F) → code 0xE360
+  //             oceanColor displays as lighter blue   (0xAEBC) → code 0x5143
   uint16_t oceanColor, bgColor;
   if (darkMode) {
     bgColor    = 0xF7EB;  // ~0x0814 (opposite of dark blue/purple)
     oceanColor = 0xFCE0;  // ~0x031F (opposite of a light shade of blue)
   } else {
-    bgColor    = 0xFCE0;  // opposite of medium blue
-    oceanColor = 0xFCE0;  // same as bg in light mode — wave blends in
+    bgColor    = 0xE360;  // displays as darker ocean blue (dodger blue ~0x1C9F)
+    oceanColor = 0x5143;  // displays as lighter blue (light blue ~0xAEBC) — slightly lighter than bg
   }
   uint16_t initialOceanColor = oceanColor;
   uint16_t prevOceanColor = oceanColor;
