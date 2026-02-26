@@ -105,7 +105,7 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 
   // Surfboard silhouette (pointed nose + rounded tail).
   gfx->fillCircle(x, y - 14, 10, boardColor);
-  gfx->fillRect(x - 10, y - 14, 20, 34, boardColor);
+  gfx->fillRect(x - 10, y - 14, 21, 34, boardColor);
   gfx->fillCircle(x, y + 20, 10, boardColor);
 
   // Twin fins (skinny triangles) to make the board shape clearer.
@@ -362,23 +362,23 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
     gfx->print(tideText[i]);
   }
   
-  // Draw tide direction arrow - positioned in the center of the screen
+  // Draw tide direction arrow - positioned above or below the text in the tide bar
   if (tideDirection != 0) {
-    int16_t arrowCenterX = 240;  // Center of 480px wide screen
-    int16_t arrowSize = 6;
-    uint16_t arrowColor = currentTheme.periodDirTextColor;
+    int16_t arrowCenterX = tideX + tideBarW / 2;
+    int16_t arrowSize = 4;
+    uint16_t arrowColor = darkMode ? BLACK : WHITE;
     
     if (tideDirection > 0) {
-      // Rising tide - arrow pointing up
-      int16_t arrowY = tideBarY + 8;
+      // Rising tide - arrow above text
+      int16_t arrowY = startY - 10;
       // Draw upward pointing triangle
       gfx->fillTriangle(arrowCenterX, arrowY - arrowSize,
                        arrowCenterX - arrowSize, arrowY + arrowSize,
                        arrowCenterX + arrowSize, arrowY + arrowSize,
                        arrowColor);
     } else {
-      // Falling tide - arrow pointing down
-      int16_t arrowY = tideBarY + 8;
+      // Falling tide - arrow below text
+      int16_t arrowY = startY + textHeight + 10;
       // Draw downward pointing triangle
       gfx->fillTriangle(arrowCenterX, arrowY + arrowSize,
                        arrowCenterX - arrowSize, arrowY - arrowSize,
@@ -391,7 +391,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   float tideHeightFeet = forecast.tideHeight * 3.28084f;
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(2);
-  gfx->setCursor(tideX - 5, tideBarY + tideBarH + 8);
+  gfx->setCursor(tideX - 17, tideBarY + tideBarH + 8);
   gfx->println(String(tideHeightFeet, 1) + "ft");
 
   drawSettingsButton(settingsButton);
