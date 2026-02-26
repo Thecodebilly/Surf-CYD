@@ -361,7 +361,8 @@ void runSurfGame(Rect &exitButton) {
 
     // Erase previous stick figure + board only when position changed, to avoid flicker
     if (prevSurferX != surferX) {
-      gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 11, surferSize * 2, surferSize + 21, currentOceanColor);
+      // Top: surferY-23 (head top), Bottom: surferY+18 (board tail circle bottom) — height=41
+      gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 11, surferSize * 2, surferSize + 29, currentOceanColor);
     }
     
     // Update and draw shark fins
