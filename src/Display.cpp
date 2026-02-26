@@ -96,28 +96,29 @@ void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 }
 
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
-  // Blown-out conditions: yellow storm cloud and choppy closeout lines.
-  (void)color;
-    // Storm cloud (bitwise inverted grey)
-    uint16_t stormColor = 0x7BEF; // ~0x8410 = 0x7BEF (yellowish-white in RGB565)
-  uint16_t chopColor = currentTheme.cloudColor;
+  // "No surf" visual: surfboard icon with prohibition circle/slash.
+  uint16_t boardColor = color;
+  uint16_t noSurfColor = currentTheme.error;
+  uint16_t finColor = BLACK;
 
-  // Heavy storm cloud.
-  gfx->fillCircle(x - 28, y - 16, 14, stormColor);
-  gfx->fillCircle(x - 6, y - 22, 18, stormColor);
-  gfx->fillCircle(x + 20, y - 16, 14, stormColor);
-  gfx->fillRect(x - 42, y - 16, 84, 20, stormColor);
-  gfx->drawLine(x - 42, y + 4, x + 42, y + 4, chopColor);
+  // Surfboard silhouette (pointed nose + rounded tail).
+  gfx->fillCircle(x, y - 14, 10, boardColor);
+  gfx->fillRect(x - 10, y - 14, 20, 34, boardColor);
+  gfx->fillCircle(x, y + 20, 10, boardColor);
 
-  // Closeout bars/chop.
-  for (int i = 0; i < 4; i++) {
-    int16_t yOff = y + 18 + i * 9;
-    gfx->drawLine(x - 42, yOff, x - 26, yOff - 6, chopColor);
-    gfx->drawLine(x - 26, yOff - 6, x - 10, yOff, chopColor);
-    gfx->drawLine(x - 10, yOff, x + 6, yOff - 6, chopColor);
-    gfx->drawLine(x + 6, yOff - 6, x + 22, yOff, chopColor);
-    gfx->drawLine(x + 22, yOff, x + 42, yOff - 5, chopColor);
-  }
+  // Twin fins (skinny triangles) to make the board shape clearer.
+  gfx->fillTriangle(x - 8, y + 22, x - 4, y + 22, x - 6, y + 31, finColor);
+  gfx->fillTriangle(x + 4, y + 22, x + 8, y + 22, x + 6, y + 31, finColor);
+
+  // Board stringer for readability against brighter themes.
+  gfx->drawLine(x, y - 22, x, y + 28, currentTheme.background);
+
+  // Prohibition marker (circle + slash) over the board.
+  int16_t ringRadius = 30;
+  gfx->drawCircle(x, y + 2, ringRadius, noSurfColor);
+  gfx->drawCircle(x, y + 2, ringRadius - 1, noSurfColor);
+  gfx->drawLine(x - 20, y + 22, x + 20, y - 18, noSurfColor);
+  gfx->drawLine(x - 19, y + 22, x + 21, y - 18, noSurfColor);
 }
 
 
