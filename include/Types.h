@@ -57,6 +57,7 @@ struct Theme {
   uint16_t cloudColor;
   uint16_t periodDirTextColor;
   uint16_t periodDirNumberColor;
+  uint16_t tideButtonColor;
 };
 
 #endif // TYPES_H

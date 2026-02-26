@@ -25,6 +25,9 @@ float waveHeightThreshold = 1.0f;
 float minTide = -1.0f;
 float maxTide = 1.0f;
 unsigned long tideTimestamp = 0;
+float tideHeightOneHourAgo = 0.0f;
+unsigned long tideDirectionTimestamp = 0;
+int currentTideDirection = 0;
 
 void ensureWifiConnected() {
   wifiCredentials = loadWifiCredentials();
@@ -151,12 +154,35 @@ void loop() {
     }
   }
 
-  drawForecast(cachedLocation, forecast, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, waveHeightThreshold, minTide, maxTide);
+  // Determine tide direction based on 1-hour trend
+  // Only update direction if at least 1 hour has passed
+  if (tideDirectionTimestamp == 0) {
+    // First measurement - initialize
+    tideHeightOneHourAgo = forecast.tideHeight;
+    tideDirectionTimestamp = currentTime;
+    currentTideDirection = 0;
+  } else if ((currentTime - tideDirectionTimestamp) >= 3600000) {
+    // At least 1 hour has passed - calculate direction
+    if (forecast.tideHeight > tideHeightOneHourAgo + 0.05f) {
+      currentTideDirection = 1;  // Rising over the hour
+    } else if (forecast.tideHeight < tideHeightOneHourAgo - 0.05f) {
+      currentTideDirection = -1;  // Falling over the hour
+    } else {
+      currentTideDirection = 0;  // No significant change
+    }
+    // Update reference point
+    tideHeightOneHourAgo = forecast.tideHeight;
+    tideDirectionTimestamp = currentTime;
+  }
+  // If less than 1 hour has passed, keep the previous direction
+
+  drawForecast(cachedLocation, forecast, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
 
   uint32_t start = millis();
   while (millis() - start < REFRESH_INTERVAL_MS) {
     int touchResult = handleMainScreenTouch(forgetButton, forgetLocationButton, themeButton, waveButton, tideButton,
-                                            surfLocation, cachedLocation, waveHeightThreshold, minTide, maxTide, tideTimestamp);
+                                            surfLocation, cachedLocation, waveHeightThreshold, minTide, maxTide, tideTimestamp,
+                                            tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
     if (touchResult == 1) {
       // Location-affecting button: WiFi, Location, or Wave
       ensureWifiConnected();
@@ -166,7 +192,7 @@ void loop() {
       break;
     } else if (touchResult == 2) {
       // Theme button: just redraw with new theme, keep location
-      drawForecast(cachedLocation, forecast, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, waveHeightThreshold, minTide, maxTide);
+      drawForecast(cachedLocation, forecast, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
     }
     delay(50);
   }

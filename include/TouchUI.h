@@ -27,6 +27,7 @@ int selectDefaultLocation();
 int handleMainScreenTouch(const Rect &forgetButton, const Rect &forgetLocationButton, 
                           const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
                           String &surfLocation, LocationInfo &cachedLocation, 
-                          float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp);
+                          float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
+                          float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection);
 
 #endif // TOUCHUI_H

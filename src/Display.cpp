@@ -152,7 +152,7 @@ void drawDirectionArrow(int16_t cx, int16_t cy, int16_t length, float degrees, u
 
 void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton) {
   // 2x3 grid layout in top right (added tide button below wave)
-  int btnW = 68;
+  int btnW = 48;  // 30% skinnier than original 68
   int btnH = 20;
   int gap = 1;
   int startX = gfx->width() - (btnW * 2 + gap);
@@ -174,14 +174,14 @@ void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &them
   waveButton = {int16_t(startX + btnW + gap), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
   drawButton(waveButton, "Wave", currentTheme.buttonDanger, currentTheme.text, 1);
   
-  // Bottom (spanning both columns): Reset Tide
-  tideButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW * 2 + gap), int16_t(btnH)};
-  drawButton(tideButton, "Tide", currentTheme.buttonSecondary, currentTheme.text, 1);
+  // Bottom-right: Reset Tide
+  tideButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
+  drawButton(tideButton, "Tide", currentTheme.tideButtonColor, currentTheme.text, 1);
 }
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
                   Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton,
-                  float waveHeightThreshold, float minTide, float maxTide) {
+                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection) {
   gfx->fillScreen(currentTheme.background);
   int16_t w = gfx->width();
 
@@ -307,6 +307,31 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   for (int i = 0; i < 4; i++) {
     gfx->setCursor(textX, startY + i * charSpacing);
     gfx->print(tideText[i]);
+  }
+  
+  // Draw tide direction arrow
+  if (tideDirection != 0) {
+    int16_t arrowCenterX = tideX + tideBarW / 2;
+    int16_t arrowSize = 5;
+    uint16_t arrowColor = currentTheme.periodDirTextColor;
+    
+    if (tideDirection > 0) {
+      // Rising tide - arrow above "TIDE" text
+      int16_t arrowY = startY - 8;
+      // Draw upward pointing triangle
+      gfx->fillTriangle(arrowCenterX, arrowY - arrowSize,
+                       arrowCenterX - arrowSize, arrowY + arrowSize,
+                       arrowCenterX + arrowSize, arrowY + arrowSize,
+                       arrowColor);
+    } else {
+      // Falling tide - arrow below "TIDE" text
+      int16_t arrowY = startY + textHeight + 8;
+      // Draw downward pointing triangle
+      gfx->fillTriangle(arrowCenterX, arrowY + arrowSize,
+                       arrowCenterX - arrowSize, arrowY - arrowSize,
+                       arrowCenterX + arrowSize, arrowY - arrowSize,
+                       arrowColor);
+    }
   }
   
   // Display tide height in feet below the bar

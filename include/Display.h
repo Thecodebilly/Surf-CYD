@@ -19,6 +19,6 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color);
 void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton);
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
                   Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton,
-                  float waveHeightThreshold, float minTide, float maxTide);
+                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection);
 
 #endif // DISPLAY_H

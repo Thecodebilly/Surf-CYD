@@ -20,7 +20,8 @@ Theme darkTheme = {
   0x7FFF,     // error (inverted - cyan)
   0x4DFF,     // cloudColor (light blue on night mode)
   CYAN,       // periodDirTextColor (cyan on night mode)
-  0x65C8      // periodDirNumberColor (lighter green on night mode)
+  0x65C8,     // periodDirNumberColor (lighter green on night mode)
+  0x0397      // tideButtonColor (steel blue/teal - opposite of coral)
 };
 
 // Light theme colors
@@ -40,7 +41,8 @@ Theme lightTheme = {
   0x07FF,     // error (inverted - cyan)
   0x0016,     // cloudColor (dark blue on day mode)
   0xCA00,     // periodDirTextColor (orange on day mode)
-  0x2400      // periodDirNumberColor (darker green on day mode)
+  0x2400,     // periodDirNumberColor (darker green on day mode)
+  0x0397      // tideButtonColor (steel blue/teal - opposite of coral)
 };
 
 Theme currentTheme = darkTheme;
@@ -72,4 +74,5 @@ void applyTheme() {
   currentTheme.cloudColor = invertColor(currentTheme.cloudColor);
   currentTheme.periodDirTextColor = invertColor(currentTheme.periodDirTextColor);
   currentTheme.periodDirNumberColor = invertColor(currentTheme.periodDirNumberColor);
+  currentTheme.tideButtonColor = invertColor(currentTheme.tideButtonColor);
 }
