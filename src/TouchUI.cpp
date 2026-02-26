@@ -88,7 +88,7 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
     Rect clear = {140, 180, 60, 26};
     Rect space = {206, 180, 60, 26};
     Rect done = {272, 180, 40, 26};
-    drawButton(shift, shiftOn ? "ABC" : "abc", currentTheme.buttonWarning, currentTheme.text, 1);
+    drawButton(shift, shiftOn ? "lwr" : "CAPS", currentTheme.buttonWarning, currentTheme.text, 1);
     drawButton(back, "<-", currentTheme.buttonWarning, currentTheme.text, 1);
     drawButton(clear, "CLR", currentTheme.buttonDanger, currentTheme.text, 1);
     drawButton(space, "SPC", currentTheme.buttonSecondary, currentTheme.text, 1);
@@ -481,22 +481,30 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
   }
 }
 
-int handleMainScreenTouch(const Rect &settingsButton) {
+int handleMainScreenTouch(const Rect &settingsButton, const Rect &badSurfGraphicRect) {
   TouchPoint p = getTouchPoint();
   if (!p.pressed) return 0;
 
   if (pointInRect(p.x, p.y, settingsButton)) {
     return 3;  // Enter settings mode
   }
+  
+  // Check if bad surf graphic was touched (only if it has size > 0)
+  if (badSurfGraphicRect.w > 0 && badSurfGraphicRect.h > 0) {
+    if (pointInRect(p.x, p.y, badSurfGraphicRect)) {
+      while (touch.touched()) delay(20); // Debounce
+      return 6;  // Enter game mode
+    }
+  }
+  
   return 0;
 }
 
 int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, const Rect &forgetLocationButton, 
                               const Rect &themeButton, const Rect &waveButton, const Rect &tideButton, const Rect &filesButton,
+                              const Rect &leaderboardButton,
                               String &surfLocation, LocationInfo &cachedLocation, 
-                              float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
-                              String &tideLocationKey, bool &tideIsCalibrating,
-                              float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection) {
+                              float &waveHeightThreshold) {
   TouchPoint p = getTouchPoint();
   if (!p.pressed) return 0;
 
@@ -512,18 +520,10 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
   }
   if (pointInRect(p.x, p.y, forgetLocationButton)) {
     deleteSurfLocation();
-    // Delete tide data since location changes
-    deleteTideRange();
+    // Delete tide data files since location changes
+    deleteTideBounds();
     deleteTideDirection();
-    // Reset tide variables
-    minTide = -1.0f;
-    maxTide = 1.0f;
-    tideTimestamp = 0;
-    tideLocationKey = "";
-    tideIsCalibrating = true;
-    tideHeightOneHourAgo = 0.0f;
-    tideDirectionTimestamp = 0;
-    currentTideDirection = 0;
+    deleteTideHourlyCheck();
     showStatus("Location deleted", "Reconfigure location", currentTheme.buttonWarning);
     delay(1200);
     surfLocation = "";  // Ensure it's cleared
@@ -549,8 +549,9 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
     deleteThemePreference();
     deleteWaveHeightPreference();
     deleteSurfLocation();
-    deleteTideRange();
+    deleteTideBounds();
     deleteTideDirection();
+    deleteTideHourlyCheck();
     
     showStatus("All settings reset", "Device will restart...", currentTheme.buttonWarning);
     delay(2000);
@@ -558,6 +559,9 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
   }
   if (pointInRect(p.x, p.y, filesButton)) {
     return 5;  // View files screen
+  }
+  if (pointInRect(p.x, p.y, leaderboardButton)) {
+    return 7;  // Show leaderboard
   }
   return 0;
 }

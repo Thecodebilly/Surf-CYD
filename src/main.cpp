@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <SPIFFS.h>
+#include <time.h>
 
 #include "Config.h"
 #include "Types.h"
@@ -9,11 +10,13 @@
 #include "Network.h"
 #include "Display.h"
 #include "TouchUI.h"
+#include "Game.h"
 
 // Global state
 LocationInfo cachedLocation;
 WifiCredentials wifiCredentials;
 bool inSettingsMode = false;
+bool inGameMode = false;
 Rect settingsButton = {0, 0, 0, 0};
 Rect backButton = {0, 0, 0, 0};
 Rect forgetButton = {0, 0, 0, 0};
@@ -22,17 +25,13 @@ Rect themeButton = {0, 0, 0, 0};
 Rect waveButton = {0, 0, 0, 0};
 Rect tideButton = {0, 0, 0, 0};
 Rect filesButton = {0, 0, 0, 0};
+Rect leaderboardButton = {0, 0, 0, 0};
+Rect badSurfGraphicRect = {0, 0, 0, 0};
+Rect exitButton = {0, 0, 0, 0};
 String surfLocation = "";
 int locationRetryCount = 0;
 int surfRetryCount = 0;
 float waveHeightThreshold = 1.0f;
-float minTide = -1.0f;
-float maxTide = 1.0f;
-unsigned long tideTimestamp = 0;
-String tideLocationKey = "";
-bool tideIsCalibrating = true;
-float tideHeightOneHourAgo = 0.0f;
-unsigned long tideDirectionTimestamp = 0;
 int currentTideDirection = 0;
 
 void ensureWifiConnected() {
@@ -60,8 +59,80 @@ void setup() {
 
   setupDisplay();
   setupTouch();
+  
+  // Check if this is first boot (no config files exist)
+  bool isFirstBoot = !SPIFFS.exists(WIFI_FILE) && 
+                     !SPIFFS.exists(LOCATION_FILE) && 
+                     !SPIFFS.exists(THEME_FILE) &&
+                     !SPIFFS.exists(WAVE_PREF_FILE);
+  
+  if (isFirstBoot) {
+    // Show welcome screen until user presses setup
+    Rect setupButton = {0, 0, 0, 0};
+    drawWelcomeScreen(setupButton);
+    
+    // Wait for setup button press
+    while (true) {
+      if (touch.touched()) {
+        TS_Point raw = touch.getPoint();
+        int16_t touchX = map(raw.x, TOUCH_MIN_X, TOUCH_MAX_X, gfx->width(), 0);
+        int16_t touchY = map(raw.y, TOUCH_MIN_Y, TOUCH_MAX_Y, gfx->height(), 0);
+        if (pointInRect(touchX, touchY, setupButton)) {
+          while (touch.touched()) delay(20);
+          break;
+        }
+        while (touch.touched()) delay(20);
+      }
+      delay(50);
+    }
+
+    // Name entry — keyboard, then confirm screen
+    String playerName;
+    while (true) {
+      playerName = touchKeyboardInput("What's your name?", playerName, false);
+      if (playerName.length() == 0) continue; // require non-empty
+
+      Rect confirmButton = {0, 0, 0, 0};
+      drawNameConfirmScreen(playerName, confirmButton);
+
+      bool confirmed = false;
+      while (!confirmed) {
+        if (touch.touched()) {
+          TS_Point raw = touch.getPoint();
+          int16_t touchX = map(raw.x, TOUCH_MIN_X, TOUCH_MAX_X, gfx->width(), 0);
+          int16_t touchY = map(raw.y, TOUCH_MIN_Y, TOUCH_MAX_Y, gfx->height(), 0);
+          while (touch.touched()) delay(20);
+          if (pointInRect(touchX, touchY, confirmButton)) {
+            confirmed = true;
+          } else {
+            // Tapped elsewhere — go back to keyboard to re-enter
+            break;
+          }
+        }
+        delay(50);
+      }
+      if (confirmed) break; // exit loop, proceed to WiFi
+    }
+
+    savePlayerName(playerName);
+  }
 
   ensureWifiConnected();
+  
+  // Configure NTP time sync
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  logInfo("Waiting for NTP time sync...");
+  // Wait up to 10 seconds for time sync
+  int timeoutCount = 0;
+  while (time(nullptr) < 1000000000 && timeoutCount < 100) {
+    delay(100);
+    timeoutCount++;
+  }
+  if (time(nullptr) >= 1000000000) {
+    logInfo("NTP time synced successfully: " + String(time(nullptr)));
+  } else {
+    logError("NTP time sync failed after 10 seconds, time=" + String(time(nullptr)));
+  }
 
   cachedLocation = loadSurfLocationInfo();
   if (!cachedLocation.valid) {
@@ -76,12 +147,6 @@ void setup() {
   if (waveHeightThreshold == 1.0f && !SPIFFS.exists(WAVE_PREF_FILE)) {
     waveHeightThreshold = runWaveHeightSetupTouch();
   }
-  
-  // Load tide range
-  loadTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
-  
-  // Load tide direction tracking
-  loadTideDirection(tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
 }
 
 void loop() {
@@ -139,92 +204,60 @@ void loop() {
   // Successfully fetched surf, reset retry count
   surfRetryCount = 0;
   
-  // Create location key from coordinates (rounded to 2 decimal places for consistency)
-  String currentLocationKey = String(cachedLocation.latitude, 2) + "," + String(cachedLocation.longitude, 2);
+  // New hourly tide direction tracking system
+  time_t currentTime = time(nullptr);
+  struct tm *timeinfo = localtime(&currentTime);
+  int currentHour = timeinfo->tm_hour;
   
-  // Check if location has changed - if so, delete all tide data
-  if (tideLocationKey != "" && tideLocationKey != currentLocationKey) {
-    logInfo("Location changed from " + tideLocationKey + " to " + currentLocationKey + ". Resetting tide data.");
-    deleteTideRange();
-    deleteTideDirection();
-    minTide = -1.0f;
-    maxTide = 1.0f;
-    tideTimestamp = 0;
-    tideLocationKey = "";
-    tideIsCalibrating = true;
-    tideHeightOneHourAgo = 0.0f;
-    tideDirectionTimestamp = 0;
-    currentTideDirection = 0;
-  }
+  // Load saved hourly check data
+  float hourStartHeight = 0.0f;
+  time_t hourStartTime = 0;
+  int savedHour = -1;
+  bool hasHourlyData = loadTideHourlyCheck(hourStartHeight, hourStartTime, savedHour);
   
-  // Update tide range tracking with calibration period
-  unsigned long currentTime = millis();
-  if (tideTimestamp == 0) {
-    // First run - initialize calibration
-    minTide = forecast.tideHeight;
-    maxTide = forecast.tideHeight;
-    tideTimestamp = currentTime;
-    tideLocationKey = currentLocationKey;
-    tideIsCalibrating = true;
-    saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
-    logInfo("Started tide calibration at location: " + tideLocationKey);
-  } else if (tideIsCalibrating && (currentTime - tideTimestamp) >= 86400000) {
-    // 24 hours have passed - calibration complete
-    tideIsCalibrating = false;
-    saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
-    logInfo("Tide calibration complete. Range: " + String(minTide, 2) + " to " + String(maxTide, 2));
-  } else if (tideIsCalibrating) {
-    // Still calibrating - update min/max every reading
-    bool updated = false;
-    if (forecast.tideHeight < minTide) {
-      minTide = forecast.tideHeight;
-      updated = true;
-    }
-    if (forecast.tideHeight > maxTide) {
-      maxTide = forecast.tideHeight;
-      updated = true;
-    }
-    if (updated) {
-      saveTideRange(minTide, maxTide, tideTimestamp, tideLocationKey, tideIsCalibrating);
-      logInfo("Tide range updated during calibration: " + String(minTide, 2) + " to " + String(maxTide, 2));
-    }
-  }
-  // If not calibrating, keep the established range (don't update)
-
-  // Determine tide direction based on 1-hour trend
-  // Only update direction if at least 1 hour has passed
-  if (tideDirectionTimestamp == 0) {
-    // First measurement - initialize
-    tideHeightOneHourAgo = forecast.tideHeight;
-    tideDirectionTimestamp = currentTime;
-    currentTideDirection = 0;
-    saveTideDirection(tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
-  } else if ((currentTime - tideDirectionTimestamp) >= 3600000) {
-    // At least 1 hour has passed - calculate direction
-    if (forecast.tideHeight > tideHeightOneHourAgo + 0.05f) {
-      currentTideDirection = 1;  // Rising over the hour
-    } else if (forecast.tideHeight < tideHeightOneHourAgo - 0.05f) {
-      currentTideDirection = -1;  // Falling over the hour
+  if (!hasHourlyData || savedHour != currentHour) {
+    // New hour - record the start of this hour
+    logInfo("Starting tide tracking for hour " + String(currentHour));
+    saveTideHourlyCheck(forecast.tideHeight, currentTime, currentHour);
+    currentTideDirection = 0;  // Unknown direction at start of hour
+  } else {
+    // We're in the same hour - check if enough time has passed to determine direction
+    int minutesPassed = (currentTime - hourStartTime) / 60;
+    
+    if (minutesPassed >= 50) {
+      // At least 50 minutes into the hour - determine direction
+      float heightChange = forecast.tideHeight - hourStartHeight;
+      
+      if (heightChange > 0.05f) {
+        currentTideDirection = 1;  // Rising
+        logInfo("Tide rising: +" + String(heightChange, 2) + "m over " + String(minutesPassed) + " minutes");
+      } else if (heightChange < -0.05f) {
+        currentTideDirection = -1;  // Falling
+        logInfo("Tide falling: " + String(heightChange, 2) + "m over " + String(minutesPassed) + " minutes");
+      } else {
+        currentTideDirection = 0;  // Slack tide
+        logInfo("Slack tide: " + String(heightChange, 2) + "m over " + String(minutesPassed) + " minutes");
+      }
+      
+      // Save the determined direction (simplified tide direction storage)
+      saveTideDirection(hourStartHeight, hourStartTime, currentTideDirection);
     } else {
-      currentTideDirection = 0;  // No significant change
+      // Not enough time passed - load previous direction if available
+      float tempHeight;
+      time_t tempTime;
+      loadTideDirection(tempHeight, tempTime, currentTideDirection);
+      logInfo("Using previous tide direction (" + String(currentTideDirection) + "), " + String(minutesPassed) + " minutes into hour");
     }
-    // Update reference point
-    tideHeightOneHourAgo = forecast.tideHeight;
-    tideDirectionTimestamp = currentTime;
-    saveTideDirection(tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
   }
-  // If less than 1 hour has passed, keep the previous direction
 
-  drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection, tideIsCalibrating);
+  drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection);
 
   uint32_t start = millis();
   while (millis() - start < REFRESH_INTERVAL_MS) {
     if (inSettingsMode) {
       // Handle settings screen
-      int touchResult = handleSettingsScreenTouch(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton,
-                                                   surfLocation, cachedLocation, waveHeightThreshold, minTide, maxTide, tideTimestamp,
-                                                   tideLocationKey, tideIsCalibrating,
-                                                   tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
+      int touchResult = handleSettingsScreenTouch(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton, leaderboardButton,
+                                                   surfLocation, cachedLocation, waveHeightThreshold);
       if (touchResult == 1) {
         // Location-affecting button: WiFi or Location
         inSettingsMode = false;
@@ -235,32 +268,37 @@ void loop() {
         break;
       } else if (touchResult == 2) {
         // Theme or Wave or Tide button: redraw settings screen
-        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton);
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton, leaderboardButton);
       } else if (touchResult == 4) {
         // Back button: exit settings
         inSettingsMode = false;
-        drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection, tideIsCalibrating);
+        drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection);
       } else if (touchResult == 5) {
-        // View files button: show files screen
+        // View files button: show files screen (handles its own input now)
         viewFilesScreen(backButton);
-        // Wait for back button touch
-        while (true) {
-          TouchPoint p = getTouchPoint();
-          if (p.pressed && pointInRect(p.x, p.y, backButton)) {
-            while (touch.touched()) delay(20);
-            drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton);
-            break;
-          }
-          delay(50);
-        }
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton, leaderboardButton);
+      } else if (touchResult == 7) {
+        // Leaderboard button
+        showLeaderboard();
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton, leaderboardButton);
       }
+    } else if (inGameMode) {
+      // Handle game screen - game is already running, just wait
+      delay(50);
     } else {
       // Handle main screen
-      int touchResult = handleMainScreenTouch(settingsButton);
+      int touchResult = handleMainScreenTouch(settingsButton, badSurfGraphicRect);
       if (touchResult == 3) {
         // Settings button: enter settings mode
         inSettingsMode = true;
-        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton);
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton, leaderboardButton);
+      } else if (touchResult == 6) {
+        // Bad surf graphic touched: enter game mode
+        inGameMode = true;
+        runSurfGame(exitButton);
+        // Game ended, return to main screen
+        inGameMode = false;
+        drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection);
       }
     }
     delay(50);

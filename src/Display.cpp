@@ -1,8 +1,11 @@
 #include "Display.h"
 #include "Config.h"
 #include "Theme.h"
+#include "TouchUI.h"
 #include <SPIFFS.h>
 #include <FS.h>
+#include <ArduinoJson.h>
+#include <vector>
 
 Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI, TFT_MISO);
 Arduino_GFX *gfx = new Arduino_ST7796(bus, TFT_RST, 1 /* rotation */, true /* IPS */, 320, 480, 0, 0, 0, 0);
@@ -47,29 +50,22 @@ void showStatus(const String &line1, const String &line2 = "", uint16_t color = 
 void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   // Sunrise + clean peeling wave + surfer silhouette (inverted palette)
   auto invert565 = [](uint16_t c) -> uint16_t { return static_cast<uint16_t>(~c); };
-  uint16_t skyColor = invert565(color);
   uint16_t seaColor = invert565(currentTheme.accent);
   uint16_t foamColor = invert565(currentTheme.text);
   uint16_t surferColor = invert565(currentTheme.background);
 
-  // Rising sun
-    // Rising sun (bitwise inverted yellow)
-    uint16_t sunColor = 0x001F; // ~0xFFE0 = 0x001F (blue in RGB565)
-    gfx->fillCircle(x + 20, y - 34, 16, sunColor);
-    for (int i = 0; i < 7; i++) {
-      float angle = (-0.25f + i * 0.25f) * PI;
-      int16_t x1 = x + 20 + cos(angle) * 20;
-      int16_t y1 = y - 34 + sin(angle) * 20;
-      int16_t x2 = x + 20 + cos(angle) * 30;
-      int16_t y2 = y - 34 + sin(angle) * 30;
-      gfx->drawLine(x1, y1, x2, y2, sunColor);
-    }
-    // Add one more ray directly on top
-    int16_t x1_top = x + 20;
-    int16_t y1_top = y - 34 - 20;
-    int16_t x2_top = x + 20;
-    int16_t y2_top = y - 34 - 30;
-    gfx->drawLine(x1_top, y1_top, x2_top, y2_top, sunColor);
+  // Rising sun (~0xFFE0 = 0x001F, blue in RGB565 after inversion)
+  uint16_t sunColor = 0x001F;
+  gfx->fillCircle(x + 20, y - 34, 16, sunColor);
+  for (int i = 0; i < 7; i++) {
+    float angle = (-0.25f + i * 0.25f) * PI;
+    int16_t x1 = x + 20 + cos(angle) * 20;
+    int16_t y1 = y - 34 + sin(angle) * 20;
+    int16_t x2 = x + 20 + cos(angle) * 30;
+    int16_t y2 = y - 34 + sin(angle) * 30;
+    gfx->drawLine(x1, y1, x2, y2, sunColor);
+  }
+  gfx->drawLine(x + 20, y - 54, x + 20, y - 64, sunColor);
 
   // Clean wave face and lip
   gfx->fillCircle(x - 10, y + 10, 42, seaColor);
@@ -197,7 +193,7 @@ void drawSettingsButton(Rect &settingsButton) {
   drawButton(settingsButton, "Settings", currentTheme.buttonPrimary, currentTheme.text, 1);
 }
 
-void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton, Rect &filesButton) {
+void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton, Rect &filesButton, Rect &leaderboardButton) {
   gfx->fillScreen(currentTheme.background);
   
   // Title
@@ -227,22 +223,31 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
   waveButton = {int16_t(startX + btnW + gap), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
   drawButton(waveButton, "Reset Wave", currentTheme.buttonDanger, currentTheme.text, 2);
   
-  // Row 3
-  tideButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
-  drawButton(tideButton, "Reset All", currentTheme.tideButtonColor, currentTheme.text, 2);
-  
+  // Row 3: Leaderboard | View Files
+  leaderboardButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
+  drawButton(leaderboardButton, "Leaderboard", 0x001F, currentTheme.text, 2);
+
   filesButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
   drawButton(filesButton, "View Files", currentTheme.buttonList, currentTheme.text, 2);
-  
-  // Row 4
-  // Back button - centered at bottom
-  backButton = {int16_t(startX + (btnW + gap) / 2), int16_t(startY + (btnH + gap) * 3), int16_t(btnW), int16_t(btnH)};
+
+  // Row 4: Reset All | Back
+  tideButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 3), int16_t(btnW), int16_t(btnH)};
+  drawButton(tideButton, "Reset All", currentTheme.tideButtonColor, currentTheme.text, 2);
+
+  backButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 3), int16_t(btnW), int16_t(btnH)};
   drawButton(backButton, "< Back", currentTheme.buttonSecondary, currentTheme.text, 2);
+
+  // Website credit at very bottom
+  gfx->setTextColor(currentTheme.textSecondary);
+  gfx->setTextSize(1);
+  int16_t siteWidth = strlen("billy-shaw.com") * 6;
+  gfx->setCursor(gfx->width() / 2 - siteWidth / 2, gfx->height() - 10);
+  gfx->print("billy-shaw.com");
 }
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
-                  Rect &settingsButton,
-                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection, bool tideIsCalibrating) {
+                  Rect &settingsButton, Rect &badSurfGraphicRect,
+                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection) {
   gfx->fillScreen(currentTheme.background);
   int16_t w = gfx->width();
 
@@ -286,8 +291,13 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   // Right side condition graphic moved up to leave room for arrows
   if (happy) {
     drawGoodSurfGraphic(w - 78, 130, currentTheme.accent);
+    badSurfGraphicRect = {0, 0, 0, 0}; // No bad surf graphic
   } else {
-    drawBadSurfGraphic(w - 133, 140, accent);
+    int16_t badSurfX = w - 133;
+    int16_t badSurfY = 140;
+    drawBadSurfGraphic(badSurfX, badSurfY, accent);
+    // Set touchable area around the bad surf graphic (roughly 100x100 box)
+    badSurfGraphicRect = {int16_t(badSurfX - 50), int16_t(badSurfY - 50), 100, 100};
   }
 
   // Middle data row
@@ -332,143 +342,276 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->println(String(forecast.windDirection, 0) + (char)248);
 
   // Tide bar (vertical) - positioned to the right of wind arrow
-  const int16_t tideX = 420;  // Moved right 15 pixels
-  const int16_t tideBarY = 195;  // Moved down 10 pixels
-  const int16_t tideBarW = 45;  // 10% wider than 41
-  const int16_t tideBarH = 96;  // 20% less than 120
-  
-  // Draw tide bar outline with mode-appropriate color
-  uint16_t tideOutlineColor = darkMode ? BLACK : WHITE;
-  gfx->drawRect(tideX, tideBarY, tideBarW, tideBarH, tideOutlineColor);
-  
-  // Normalize tide height to 0-1 range using actual min/max
+  const int16_t tideX = 420;
+  const int16_t tideBarY = 195;
+  const int16_t tideBarW = 45;
+  const int16_t tideBarH = 96;
+
+  // Compute how far the current tide is through today's low→high range (0.0 – 1.0)
   float tideRange = maxTide - minTide;
-  float tideNormalized = 0.5f;  // Default to middle
-  if (tideRange > 0.01f) {  // Avoid division by zero
+  float tideNormalized = 0.0f;
+  if (tideRange > 0.01f) {
     tideNormalized = (forecast.tideHeight - minTide) / tideRange;
     tideNormalized = max(0.0f, min(1.0f, tideNormalized));
   }
-  
-  // Fill the bar from bottom to top based on tide height with mode-appropriate color
-  uint16_t tideFillColor = darkMode ? YELLOW : 0xFD20;  // Yellow in dark mode, orange in light mode
+  int tidePercent = (int)(tideNormalized * 100.0f + 0.5f);
+
+  // Fill bar from bottom proportional to position in today's range
+  uint16_t tideOutlineColor = darkMode ? BLACK : WHITE;
+  uint16_t tideFillColor = darkMode ? YELLOW : 0xFD20;
+  gfx->drawRect(tideX, tideBarY, tideBarW, tideBarH, tideOutlineColor);
   int16_t fillHeight = (int16_t)(tideNormalized * (tideBarH - 4));
   if (fillHeight > 0) {
     gfx->fillRect(tideX + 2, tideBarY + tideBarH - 2 - fillHeight, tideBarW - 4, fillHeight, tideFillColor);
   }
-  
-  // Display min and max tide values above the tide box in feet
-  gfx->setTextColor(currentTheme.periodDirTextColor);
   gfx->setTextSize(1);
-  gfx->setCursor(tideX - 5, tideBarY - 21);
-  float minTideFeet = minTide * 3.28084f;
-  float maxTideFeet = maxTide * 3.28084f;
-  gfx->print(String(minTideFeet, 1));
-  gfx->print("/");
-  gfx->print(String(maxTideFeet, 1));
-    // Draw calibration indicator if tide is still calibrating
-  if (tideIsCalibrating) {
-    // Small circular pending icon above the tide range
-    int16_t iconX = tideX - 5;
-    int16_t iconY = tideBarY - 35;
-    uint16_t iconColor = currentTheme.buttonWarning;
-    
-    // Draw a small circle with rotating segments to indicate calibrating
-    gfx->drawCircle(iconX + 3, iconY + 3, 4, iconColor);
-    // Draw small arcs/segments to show it's pending (simplified as dots)
-    gfx->fillCircle(iconX + 3, iconY - 1, 1, iconColor);
-    gfx->fillCircle(iconX + 7, iconY + 3, 1, iconColor);
-    gfx->fillCircle(iconX + 3, iconY + 7, 1, iconColor);
-  }
-    // Draw "TIDE" text vertically centered in the tide bar
-  gfx->setTextColor(currentTheme.periodDirTextColor);
-  gfx->setTextSize(1);
+  // Draw "TIDE" text vertically centered in the bar
   const char* tideText = "TIDE";
-  int16_t charSpacing = 10;
-  int16_t charWidth = 6;  // Font size 1 character width
-  int16_t textHeight = 4 * charSpacing;  // Total height of 4 characters
+  const int16_t charSpacing = 10;
+  const int16_t charWidth = 6;
+  const int16_t textHeight = 4 * charSpacing;
   int16_t startY = tideBarY + (tideBarH - textHeight) / 2;
   int16_t textX = tideX + (tideBarW - charWidth) / 2;
   for (int i = 0; i < 4; i++) {
     gfx->setCursor(textX, startY + i * charSpacing);
     gfx->print(tideText[i]);
   }
-  
-  // Draw tide direction arrow - positioned above or below the text in the tide bar
-  // Always displayed for testing
+
+  // Tide direction arrow inside bar (above or below text)
   int16_t arrowCenterX = tideX + tideBarW / 2;
   int16_t arrowSize = 3;
   uint16_t arrowColor = darkMode ? BLACK : WHITE;
-  
   if (tideDirection > 0) {
-    // Rising tide - arrow above text
-    int16_t arrowY = startY - 10;
-    // Draw upward pointing triangle
-    gfx->fillTriangle(arrowCenterX, arrowY - arrowSize,
-                     arrowCenterX - arrowSize, arrowY + arrowSize,
-                     arrowCenterX + arrowSize, arrowY + arrowSize,
-                     arrowColor);
+    int16_t tideArrowY = startY - 10;
+    gfx->fillTriangle(arrowCenterX, tideArrowY - arrowSize,
+                      arrowCenterX - arrowSize, tideArrowY + arrowSize,
+                      arrowCenterX + arrowSize, tideArrowY + arrowSize,
+                      arrowColor);
   } else {
-    // Falling tide - arrow below text
-    int16_t arrowY = startY + textHeight + 10;
-    // Draw downward pointing triangle
-    gfx->fillTriangle(arrowCenterX, arrowY + arrowSize,
-                     arrowCenterX - arrowSize, arrowY - arrowSize,
-                     arrowCenterX + arrowSize, arrowY - arrowSize,
-                     arrowColor);
+    int16_t tideArrowY = startY + textHeight + 10;
+    gfx->fillTriangle(arrowCenterX, tideArrowY + arrowSize,
+                      arrowCenterX - arrowSize, tideArrowY - arrowSize,
+                      arrowCenterX + arrowSize, tideArrowY - arrowSize,
+                      arrowColor);
   }
-  
-  // Display tide height in feet below the bar
+
+  // Tide height in feet below the bar
   float tideHeightFeet = forecast.tideHeight * 3.28084f;
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(2);
-  gfx->setCursor(tideX - 17, tideBarY + tideBarH + 8);
+  gfx->setCursor(tideX - 17, tideBarY + tideBarH + 5);
   gfx->println(String(tideHeightFeet, 1) + "ft");
 
   drawSettingsButton(settingsButton);
 }
 
 void viewFilesScreen(Rect &backButton) {
-  gfx->fillScreen(currentTheme.background);
+  // Collect all file info first
+  struct FileInfo {
+    String name;
+    String content;
+  };
   
-  // Title
-  gfx->setTextColor(currentTheme.textSecondary);
-  gfx->setTextSize(3);
-  gfx->setCursor(10, 10);
-  gfx->println("Stored Files");
-  
-  // List all files from SPIFFS
-  gfx->setTextColor(currentTheme.text);
-  gfx->setTextSize(1);
-  int16_t y = 50;
-  
+  std::vector<FileInfo> files;
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
-  int fileCount = 0;
   
-  while (file && y < 280) {
-    String fileName = String(file.name());
-    size_t fileSize = file.size();
-    
-    gfx->setCursor(10, y);
-    gfx->print(fileName);
-    gfx->setCursor(200, y);
-    gfx->print(String(fileSize) + " bytes");
-    
-    y += 12;
-    fileCount++;
+  while (file) {
+    FileInfo info;
+    info.name = String(file.name());
+    info.content = "";
+    while (file.available() && info.content.length() < 500) {
+      info.content += (char)file.read();
+    }
+    files.push_back(info);
     file = root.openNextFile();
   }
   
-  if (fileCount == 0) {
-    gfx->setCursor(10, 50);
-    gfx->setTextColor(currentTheme.textSecondary);
-    gfx->println("No files found");
+  int scrollOffset = 0;
+  const int lineHeight = 10;
+  const int headerHeight = 30;
+  const int footerHeight = 45;
+  const int contentHeight = 320 - headerHeight - footerHeight;
+  const int maxLines = contentHeight / lineHeight;
+  
+  // Calculate total content height
+  int totalLines = 0;
+  for (const auto& f : files) {
+    totalLines += 1; // filename
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, f.content);
+    if (!error) {
+      JsonObject obj = doc.as<JsonObject>();
+      for (JsonPair kv : obj) {
+        totalLines++;
+      }
+    } else if (f.content.length() > 0) {
+      totalLines++;
+    }
+    totalLines++; // gap
   }
   
-  // Back button at bottom
-  int btnW = 140;
-  int btnH = 40;
-  int startX = (gfx->width() - btnW) / 2;
-  backButton = {int16_t(startX), 270, int16_t(btnW), int16_t(btnH)};
-  drawButton(backButton, "< Back", currentTheme.buttonSecondary, currentTheme.text, 2);
+  bool needsRedraw = true;
+  
+  while (true) {
+    if (needsRedraw) {
+      gfx->fillScreen(currentTheme.background);
+      
+      // Title
+      gfx->setTextColor(currentTheme.textSecondary);
+      gfx->setTextSize(2);
+      gfx->setCursor(10, 5);
+      gfx->println("Stored Files");
+      
+      // Show scroll indicator if needed
+      if (totalLines > maxLines) {
+        gfx->setTextSize(1);
+        gfx->setCursor(390, 5);
+        gfx->print(scrollOffset / lineHeight);
+        gfx->print("/");
+        gfx->print((totalLines - maxLines));
+      }
+      
+      // Draw content with scroll offset
+      gfx->setTextSize(1);
+      int16_t y = headerHeight;
+      int currentLine = 0;
+      
+      for (const auto& f : files) {
+        // File name header
+        if (currentLine >= scrollOffset / lineHeight && y < headerHeight + contentHeight) {
+          gfx->setTextColor(currentTheme.accent);
+          gfx->setCursor(5, y);
+          gfx->print(">");
+          gfx->setCursor(12, y);
+          gfx->println(f.name);
+          y += lineHeight;
+        }
+        currentLine++;
+        
+        // Parse and display content
+        DynamicJsonDocument doc(1024);
+        DeserializationError error = deserializeJson(doc, f.content);
+        
+        if (!error) {
+          JsonObject obj = doc.as<JsonObject>();
+          for (JsonPair kv : obj) {
+            if (currentLine >= scrollOffset / lineHeight && y < headerHeight + contentHeight) {
+              gfx->setCursor(15, y);
+              gfx->setTextColor(currentTheme.textSecondary);
+              gfx->print(String(kv.key().c_str()) + ":");
+              
+              gfx->setTextColor(currentTheme.text);
+              String value = kv.value().as<String>();
+              if (value.length() > 30) value = value.substring(0, 27) + "...";
+              gfx->print(" " + value);
+              y += lineHeight;
+            }
+            currentLine++;
+          }
+        } else if (f.content.length() > 0) {
+          if (currentLine >= scrollOffset / lineHeight && y < headerHeight + contentHeight) {
+            gfx->setTextColor(currentTheme.text);
+            gfx->setCursor(15, y);
+            String content = f.content;
+            if (content.length() > 45) content = content.substring(0, 42) + "...";
+            gfx->println(content);
+            y += lineHeight;
+          }
+          currentLine++;
+        }
+        currentLine++; // gap
+      }
+      
+      if (files.size() == 0) {
+        gfx->setCursor(10, 50);
+        gfx->setTextColor(currentTheme.textSecondary);
+        gfx->println("No files found");
+      }
+      
+      // Back button at bottom
+      int btnW = 140;
+      int btnH = 40;
+      int startX = (gfx->width() - btnW) / 2;
+      backButton = {int16_t(startX), int16_t(320 - btnH - 5), int16_t(btnW), int16_t(btnH)};
+      drawButton(backButton, "< Back", currentTheme.buttonSecondary, currentTheme.text, 2);
+      
+      needsRedraw = false;
+    }
+    
+    // Handle touch for scrolling or back button
+    TouchPoint p = getTouchPoint();
+    if (p.pressed) {
+      if (pointInRect(p.x, p.y, backButton)) {
+        while (touch.touched()) delay(20);
+        return;
+      }
+      
+      // Scroll up/down based on touch position
+      if (p.y < 160 && scrollOffset > 0) {
+        // Scroll up
+        scrollOffset -= lineHeight * 3;
+        if (scrollOffset < 0) scrollOffset = 0;
+        needsRedraw = true;
+      } else if (p.y >= 160 && scrollOffset < (totalLines - maxLines) * lineHeight) {
+        // Scroll down
+        scrollOffset += lineHeight * 3;
+        int maxScroll = (totalLines - maxLines) * lineHeight;
+        if (maxScroll < 0) maxScroll = 0;
+        if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+        needsRedraw = true;
+      }
+      
+      while (touch.touched()) delay(20);
+      delay(100);
+    }
+    
+    delay(50);
+  }
+}
+
+void drawWelcomeScreen(Rect &setupButton) {
+  const int16_t screenWidth = gfx->width();
+  const int16_t screenHeight = gfx->height();
+
+  gfx->fillScreen(currentTheme.text);
+
+  // "Hi, I'm Surf Board." centered — textSize 3: each char 18px wide
+  gfx->setTextColor(currentTheme.background);
+  gfx->setTextSize(3);
+  const char *line1 = "Hi, I'm Surf Board.";
+  gfx->setCursor(screenWidth / 2 - (int16_t)(strlen(line1) * 18) / 2, screenHeight / 2 - 65);
+  gfx->println(line1);
+
+  // "What's your name?" centered
+  gfx->setTextColor(~currentTheme.accent);
+  const char *line2 = "What's your name?";
+  gfx->setCursor(screenWidth / 2 - (int16_t)(strlen(line2) * 18) / 2, screenHeight / 2 - 18);
+  gfx->println(line2);
+
+  // Setup button centered
+  setupButton = {int16_t(screenWidth / 2 - 100), int16_t(screenHeight / 2 + 65), 200, 50};
+  drawButton(setupButton, "My name is...", ~currentTheme.success, currentTheme.background, 2);
+}
+
+void drawNameConfirmScreen(const String &name, Rect &confirmButton) {
+  const int16_t screenWidth = gfx->width();
+  const int16_t screenHeight = gfx->height();
+
+  gfx->fillScreen(currentTheme.text);
+
+  gfx->setTextColor(currentTheme.background);
+  gfx->setTextSize(2);
+  gfx->setCursor(screenWidth / 2 - 72, screenHeight / 2 - 65);
+  gfx->println("Your name is:");
+
+  gfx->setTextColor(~currentTheme.accent);
+  gfx->setTextSize(4);
+  int16_t namePixW = (int16_t)(name.length() * 24);
+  if (namePixW > screenWidth - 20) namePixW = screenWidth - 20;
+  gfx->setCursor(screenWidth / 2 - namePixW / 2, screenHeight / 2 - 18);
+  gfx->println(name);
+
+  confirmButton = {int16_t(screenWidth / 2 - 75), int16_t(screenHeight / 2 + 65), 150, 50};
+  drawButton(confirmButton, " Confirm", ~currentTheme.success, currentTheme.background, 2);
 }

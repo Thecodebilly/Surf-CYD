@@ -2,6 +2,7 @@
 #define STORAGE_H
 
 #include "Types.h"
+#include <time.h>
 
 // Logging functions
 void logInfo(const String &message);
@@ -27,14 +28,23 @@ bool saveSurfLocation(const LocationInfo &locInfo);
 LocationInfo loadSurfLocationInfo();
 void deleteSurfLocation();
 
-// Tide range storage
-bool saveTideRange(float minTide, float maxTide, unsigned long timestamp, const String &locationKey, bool isCalibrating);
-void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp, String &locationKey, bool &isCalibrating);
-void deleteTideRange();
-
 // Tide direction storage
-bool saveTideDirection(float tideHeightOneHourAgo, unsigned long tideDirectionTimestamp, int currentTideDirection);
-void loadTideDirection(float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection);
+bool saveTideDirection(float tideHeightOneHourAgo, time_t tideDirectionTimestamp, int currentTideDirection);
+void loadTideDirection(float &tideHeightOneHourAgo, time_t &tideDirectionTimestamp, int &currentTideDirection);
 void deleteTideDirection();
+
+// Tide bounds storage (daily min/max)
+bool saveTideBounds(float minTide, float maxTide, const String &date);
+bool loadTideBounds(float &minTide, float &maxTide, String &date);
+void deleteTideBounds();
+
+// Hourly tide tracking storage
+bool saveTideHourlyCheck(float startHeight, time_t startTime, int hour);
+bool loadTideHourlyCheck(float &startHeight, time_t &startTime, int &hour);
+void deleteTideHourlyCheck();
+
+// Player name storage
+bool savePlayerName(const String &name);
+String loadPlayerName();
 
 #endif // STORAGE_H

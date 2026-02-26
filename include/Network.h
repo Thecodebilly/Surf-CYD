@@ -17,4 +17,8 @@ LocationInfo fetchLocation(const String &location);
 // Marine forecast API
 SurfForecast fetchSurfForecast(float latitude, float longitude);
 
+// NOAA Tide functions
+String findNearestTideStation(float latitude, float longitude);
+float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTide);
+
 #endif // NETWORK_H

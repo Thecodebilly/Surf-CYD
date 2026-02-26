@@ -4,6 +4,7 @@
 #include "Types.h"
 #include <XPT2046_Touchscreen.h>
 #include <vector>
+#include <time.h>
 
 // Touch hardware
 extern XPT2046_Touchscreen touch;
@@ -24,12 +25,11 @@ int selectLocationFromList(const std::vector<LocationInfo> &locations);
 int selectDefaultLocation();
 
 // Main screen touch handling
-int handleMainScreenTouch(const Rect &settingsButton);
+int handleMainScreenTouch(const Rect &settingsButton, const Rect &badSurfGraphicRect);
 int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, const Rect &forgetLocationButton, 
                               const Rect &themeButton, const Rect &waveButton, const Rect &tideButton, const Rect &filesButton,
+                              const Rect &leaderboardButton,
                               String &surfLocation, LocationInfo &cachedLocation, 
-                              float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
-                              String &tideLocationKey, bool &tideIsCalibrating,
-                              float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection);
+                              float &waveHeightThreshold);
 
 #endif // TOUCHUI_H
