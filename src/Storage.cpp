@@ -287,3 +287,61 @@ void deleteTideRange() {
   }
 }
 
+bool saveTideDirection(float tideHeightOneHourAgo, unsigned long tideDirectionTimestamp, int currentTideDirection) {
+  DynamicJsonDocument doc(256);
+  doc["tideHeightOneHourAgo"] = tideHeightOneHourAgo;
+  doc["tideDirectionTimestamp"] = tideDirectionTimestamp;
+  doc["currentTideDirection"] = currentTideDirection;
+
+  File f = SPIFFS.open(TIDE_DIRECTION_FILE, FILE_WRITE);
+  if (!f) {
+    logError("Failed to open tide direction file for write.");
+    return false;
+  }
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write tide direction file.");
+    f.close();
+    return false;
+  }
+  f.close();
+  logInfo("Saved tide direction to SPIFFS.");
+  return true;
+}
+
+void loadTideDirection(float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection) {
+  tideHeightOneHourAgo = 0.0f;
+  tideDirectionTimestamp = 0;
+  currentTideDirection = 0;
+
+  if (!SPIFFS.exists(TIDE_DIRECTION_FILE)) {
+    logInfo("No saved tide direction.");
+    return;
+  }
+
+  File f = SPIFFS.open(TIDE_DIRECTION_FILE, FILE_READ);
+  if (!f) {
+    logError("Failed to open tide direction file for read.");
+    return;
+  }
+
+  DynamicJsonDocument doc(256);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    logError("Failed to parse tide direction file.");
+    return;
+  }
+
+  tideHeightOneHourAgo = doc["tideHeightOneHourAgo"] | 0.0f;
+  tideDirectionTimestamp = doc["tideDirectionTimestamp"] | 0UL;
+  currentTideDirection = doc["currentTideDirection"] | 0;
+  logInfo(String("Loaded tide direction: ") + String(currentTideDirection));
+}
+
+void deleteTideDirection() {
+  if (SPIFFS.exists(TIDE_DIRECTION_FILE)) {
+    SPIFFS.remove(TIDE_DIRECTION_FILE);
+    logInfo("Deleted saved tide direction.");
+  }
+}
+

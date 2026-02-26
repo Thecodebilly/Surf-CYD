@@ -32,4 +32,9 @@ bool saveTideRange(float minTide, float maxTide, unsigned long timestamp);
 void loadTideRange(float &minTide, float &maxTide, unsigned long &timestamp);
 void deleteTideRange();
 
+// Tide direction storage
+bool saveTideDirection(float tideHeightOneHourAgo, unsigned long tideDirectionTimestamp, int currentTideDirection);
+void loadTideDirection(float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection);
+void deleteTideDirection();
+
 #endif // STORAGE_H

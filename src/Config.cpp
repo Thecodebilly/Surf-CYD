@@ -14,3 +14,4 @@ const char *LOCATION_FILE = "/location.json";
 const char *THEME_FILE = "/theme.json";
 const char *WAVE_PREF_FILE = "/wave_pref.json";
 const char *TIDE_RANGE_FILE = "/tide_range.json";
+const char *TIDE_DIRECTION_FILE = "/tide_direction.json";

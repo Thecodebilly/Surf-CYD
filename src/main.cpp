@@ -76,6 +76,9 @@ void setup() {
   
   // Load tide range
   loadTideRange(minTide, maxTide, tideTimestamp);
+  
+  // Load tide direction tracking
+  loadTideDirection(tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
 }
 
 void loop() {
@@ -164,6 +167,7 @@ void loop() {
     tideHeightOneHourAgo = forecast.tideHeight;
     tideDirectionTimestamp = currentTime;
     currentTideDirection = 0;
+    saveTideDirection(tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
   } else if ((currentTime - tideDirectionTimestamp) >= 3600000) {
     // At least 1 hour has passed - calculate direction
     if (forecast.tideHeight > tideHeightOneHourAgo + 0.05f) {
@@ -176,6 +180,7 @@ void loop() {
     // Update reference point
     tideHeightOneHourAgo = forecast.tideHeight;
     tideDirectionTimestamp = currentTime;
+    saveTideDirection(tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
   }
   // If less than 1 hour has passed, keep the previous direction
 

@@ -537,6 +537,7 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
     deleteWaveHeightPreference();
     deleteSurfLocation();
     deleteTideRange();
+    deleteTideDirection();
     
     showStatus("All settings reset", "Device will restart...", currentTheme.buttonWarning);
     delay(2000);

@@ -350,13 +350,15 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
     gfx->fillRect(tideX + 2, tideBarY + tideBarH - 2 - fillHeight, tideBarW - 4, fillHeight, tideFillColor);
   }
   
-  // Display min and max tide values above the tide box
+  // Display min and max tide values above the tide box in feet
   gfx->setTextColor(currentTheme.periodDirTextColor);
   gfx->setTextSize(1);
   gfx->setCursor(tideX - 5, tideBarY - 21);
-  gfx->print(String(minTide, 1));
+  float minTideFeet = minTide * 3.28084f;
+  float maxTideFeet = maxTide * 3.28084f;
+  gfx->print(String(minTideFeet, 1));
   gfx->print("/");
-  gfx->print(String(maxTide, 1));
+  gfx->print(String(maxTideFeet, 1));
   
   // Draw "TIDE" text vertically centered in the tide bar
   gfx->setTextColor(currentTheme.periodDirTextColor);
