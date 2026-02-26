@@ -51,7 +51,7 @@ void runSurfGame(Rect &exitButton) {
   const int16_t surferSpeed = 12;  // Faster movement
   
   // Obstacles (shark fins)
-  const int maxObstacles = 12;  // Increased from 6 to 12 for much more difficulty
+  const int maxObstacles = 36;  // 3x more slots for multi-spawn waves
   int16_t obstacleX[maxObstacles];
   int16_t obstacleY[maxObstacles];
   int16_t prevObstacleX[maxObstacles];
@@ -59,7 +59,7 @@ void runSurfGame(Rect &exitButton) {
   bool obstacleActive[maxObstacles];
   const int16_t obstacleWidth = 16;  // Width of shark fin base
   const int16_t obstacleHeight = 20; // Height of shark fin
-  int16_t obstacleSpeed = 5;  // Increased base speed
+  int16_t obstacleSpeed = 2;  // 2x slower base speed
   
   // Initialize obstacles
   for (int i = 0; i < maxObstacles; i++) {
@@ -71,7 +71,7 @@ void runSurfGame(Rect &exitButton) {
   unsigned long score = 0;
   unsigned long prevScore = 0;
   unsigned long lastSpawn = millis();
-  unsigned long spawnInterval = 800;  // Much faster spawning (was 1200)
+  unsigned long spawnInterval = 1200;
   unsigned long gameStart = millis();
   bool gameOver = false;
   unsigned long highScore = loadHighScore();
@@ -84,14 +84,38 @@ void runSurfGame(Rect &exitButton) {
   // Exit button setup
   exitButton = {int16_t(screenWidth - 50), 5, 45, 30};
   
-  // Inverted colors (wave is opposite of blue = yellow/orange)
-  uint16_t oceanColor = ~0x001F;  // Opposite of blue (0x001F) = 0xFFE0 (yellow)
-  uint16_t bgColor = currentTheme.background;        // Match theme (flipped from before)
-  uint16_t textColor = currentTheme.text;             // Match theme (flipped from before)
+  // Game colors based on mode
+  // Dark mode bg = opposite of dark blue/purple (0x0814) = 0xF7EB (warm light)
+  // Light mode bg = wave = opposite of medium blue (0x031F) = 0xFCE0 (amber, they blend)
+  uint16_t oceanColor, bgColor;
+  if (darkMode) {
+    bgColor    = 0xF7EB;  // ~0x0814 (opposite of dark blue/purple)
+    oceanColor = 0xFCE0;  // ~0x031F (opposite of a light shade of blue)
+  } else {
+    bgColor    = 0xFCE0;  // opposite of medium blue
+    oceanColor = 0xFCE0;  // same as bg in light mode — wave blends in
+  }
+  uint16_t initialOceanColor = oceanColor;
+  uint16_t prevOceanColor = oceanColor;
+  uint16_t initialBgColor = bgColor;
+  uint16_t prevBgColor = bgColor;
+  // 0x07FF = cyan on RGB565, inverts to red on this display — danger target
+  const uint16_t dangerOceanColor = 0x07FF;
+  const uint16_t dangerBgColor    = 0x07FF;
+  // RGB565 lerp helper
+  auto lerpRGB565 = [](uint16_t a, uint16_t b, float t) -> uint16_t {
+    uint8_t rA = (a >> 11) & 0x1F, gA = (a >> 5) & 0x3F, bA = a & 0x1F;
+    uint8_t rB = (b >> 11) & 0x1F, gB = (b >> 5) & 0x3F, bB = b & 0x1F;
+    uint8_t r  = (uint8_t)(rA + (rB - rA) * t);
+    uint8_t g  = (uint8_t)(gA + (int8_t)((int)gB - gA) * t);
+    uint8_t bl = (uint8_t)(bA + (bB - bA) * t);
+    return ((uint16_t)r << 11) | ((uint16_t)g << 5) | bl;
+  };
+  uint16_t textColor = currentTheme.text;
   uint16_t surferColor = ~YELLOW;  // Inverted yellow (becomes blue)
-  uint16_t sharkColor = ~0xF800;  // Inverted red (becomes cyan)
-  uint16_t exitBgColor = currentTheme.buttonDanger;   // Match theme (flipped from before)
-  uint16_t exitTextColor = currentTheme.text;         // Match theme (flipped from before)
+  uint16_t sharkColor = 0x7BEF;  // Opposite of mid-gray (0x8410)
+  uint16_t exitBgColor = currentTheme.buttonDanger;
+  uint16_t exitTextColor = currentTheme.text;
   
   // Initial full screen draw
   gfx->fillScreen(bgColor);
@@ -112,54 +136,90 @@ void runSurfGame(Rect &exitButton) {
   gfx->setTextSize(2);
   gfx->setCursor(10, 10);
   gfx->print("Score: 0");
+
+  // "AVOID THE SHARKS!" banner — opposite of red = cyan (0x07FF)
+  gfx->setTextColor(0x07FF);
+  gfx->setTextSize(2);
+  // 18 chars * 12px (size 2 char width) = 216px
+  gfx->setCursor(screenWidth / 2 - 108, 36);
+  gfx->println("AVOID THE SHARKS!");
   
   // Game loop
   while (!gameOver) {
-    // Progressive difficulty - increase speed every 50 points, continues infinitely
-    int currentSpeed = 5 + (score / 50);
-    if (currentSpeed > 20) currentSpeed = 20;  // Much higher max speed cap
+    // Progressive difficulty — slower individual sharks (base 1, max 5)
+    int currentSpeed = 1 + (score / 150);
+    if (currentSpeed > 5) currentSpeed = 5;
     obstacleSpeed = currentSpeed;
     
-    // Decrease spawn interval with score - continues to get faster infinitely
-    spawnInterval = 800 - (score * 2);
-    if (spawnInterval < 100) spawnInterval = 100;  // Lower minimum for extreme difficulty
+    // Decrease spawn interval rapidly — use signed math to avoid unsigned underflow
+    long spawnCalc = 1000L - (long)(score * 4);
+    spawnInterval = (unsigned long)(spawnCalc < 80 ? 80 : spawnCalc);
     
-    // Spawn new obstacles
+    // Danger level based on elapsed time — full red at 10 minutes (600,000 ms)
+    float dangerLevel = (float)(millis() - gameStart) / 600000.0f;
+    if (dangerLevel > 1.0f) dangerLevel = 1.0f;
+    uint16_t currentOceanColor = lerpRGB565(initialOceanColor, dangerOceanColor, dangerLevel);
+    uint16_t currentBgColor    = lerpRGB565(initialBgColor,    dangerBgColor,    dangerLevel);
+    bool bgChanged    = (currentBgColor    != prevBgColor);
+    bool oceanChanged = (currentOceanColor != prevOceanColor);
+    if (bgChanged || oceanChanged) {
+      // Repaint background zones — ocean band last so it overlays cleanly
+      if (bgChanged) {
+        // Fill everything above and below the ocean band
+        gfx->fillRect(0, 0, screenWidth, surferY - 15, currentBgColor);
+        gfx->fillRect(0, surferY + 40, screenWidth, screenHeight - (surferY + 40), currentBgColor);
+        prevBgColor = currentBgColor;
+      }
+      gfx->fillRect(0, surferY - 15, screenWidth, 55, currentOceanColor);
+      prevOceanColor = currentOceanColor;
+    }
+    
+    // Spawn one shark per interval — cap at 15 active simultaneously so they never stop coming
     if (millis() - lastSpawn > spawnInterval) {
-      for (int i = 0; i < maxObstacles; i++) {
-        if (!obstacleActive[i]) {
-          obstacleX[i] = random(obstacleWidth, screenWidth - obstacleWidth);
-          obstacleY[i] = -obstacleHeight;
-          prevObstacleY[i] = obstacleY[i];
-          prevObstacleX[i] = obstacleX[i];
-          obstacleActive[i] = true;
-          lastSpawn = millis();
-          break;
+      int activeCount = 0;
+      for (int i = 0; i < maxObstacles; i++) if (obstacleActive[i]) activeCount++;
+      if (activeCount < 15) {
+        for (int i = 0; i < maxObstacles; i++) {
+          if (!obstacleActive[i]) {
+            obstacleX[i] = random(obstacleWidth, screenWidth - obstacleWidth);
+            obstacleY[i] = -obstacleHeight;
+            prevObstacleY[i] = obstacleY[i];
+            prevObstacleX[i] = obstacleX[i];
+            obstacleActive[i] = true;
+            lastSpawn = millis();
+            break;
+          }
         }
+      } else {
+        // Still reset timer so we keep checking — prevents sharks from stopping
+        lastSpawn = millis();
       }
     }
     
     // Erase previous stick figure position
     if (prevSurferX != surferX) {
       // Erase previous stick figure with ocean color (rectangular area)
-      gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 8, surferSize * 2, surferSize + 12, oceanColor);
+      gfx->fillRect(prevSurferX - surferSize, surferY - surferSize - 8, surferSize * 2, surferSize + 12, currentOceanColor);
     }
     
     // Update and draw shark fins
     for (int i = 0; i < maxObstacles; i++) {
       if (obstacleActive[i]) {
-        // Erase previous position with split-aware background matching
+        // Erase previous position — widen by 1px on all sides to prevent dot trails
         if (prevObstacleY[i] >= -obstacleHeight) {
-          int16_t eraseTop = prevObstacleY[i] - obstacleHeight;
-          int16_t eraseX = prevObstacleX[i] - obstacleWidth/2;
+          int16_t eraseTop = prevObstacleY[i] - obstacleHeight - 1;
+          int16_t eraseX   = prevObstacleX[i] - obstacleWidth/2 - 1;
+          int16_t eraseW   = obstacleWidth + 2;
+          int16_t eraseH   = obstacleHeight + 4;
           int16_t boundary = surferY - 15;
-          if (eraseTop < boundary && prevObstacleY[i] + 2 > boundary) {
+          if (eraseTop < boundary && (eraseTop + eraseH) > boundary) {
             // Fin straddles the bg/ocean boundary — erase each zone separately
-            gfx->fillRect(eraseX, eraseTop, obstacleWidth, boundary - eraseTop, bgColor);
-            gfx->fillRect(eraseX, boundary, obstacleWidth, prevObstacleY[i] + 2 - boundary, oceanColor);
+            int16_t topH = boundary - eraseTop;
+            gfx->fillRect(eraseX, eraseTop, eraseW, topH, currentBgColor);
+            gfx->fillRect(eraseX, boundary, eraseW, eraseH - topH, currentOceanColor);
           } else {
-            uint16_t eraseColor = (prevObstacleY[i] >= boundary) ? oceanColor : bgColor;
-            gfx->fillRect(eraseX, eraseTop, obstacleWidth, obstacleHeight + 2, eraseColor);
+            uint16_t eraseColor = ((prevObstacleY[i] - obstacleHeight) >= boundary) ? currentOceanColor : currentBgColor;
+            gfx->fillRect(eraseX, eraseTop, eraseW, eraseH, eraseColor);
           }
         }
         
@@ -229,6 +289,18 @@ void runSurfGame(Rect &exitButton) {
       gfx->println(score);
       prevScore = score;
     }
+    
+    // Redraw exit button and banner every frame so sharks can't permanently erase them
+    gfx->fillRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, exitBgColor);
+    gfx->drawRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, currentTheme.border);
+    gfx->setTextColor(exitTextColor);
+    gfx->setTextSize(1);
+    gfx->setCursor(exitButton.x + 8, exitButton.y + (exitButton.h / 2) - 4);
+    gfx->println("Exit");
+    gfx->setTextColor(0x07FF);
+    gfx->setTextSize(2);
+    gfx->setCursor(screenWidth / 2 - 108, 36);
+    gfx->println("AVOID THE SHARKS!");
     
     // Handle input
     if (touch.touched()) {
@@ -323,8 +395,8 @@ void runSurfGame(Rect &exitButton) {
   gfx->setCursor(screenWidth / 2 - 90, screenHeight / 2 + 140);
   gfx->println("Touch to continue");
   
-  // Mandatory 3-second wait before accepting touch
-  delay(3000);
+  // Mandatory 1.5-second wait before accepting touch
+  delay(1500);
   while (touch.touched()) delay(20); // Drain any touches during wait
 
   // Wait for touch to exit
@@ -396,11 +468,19 @@ void showLeaderboard() {
   const int16_t screenWidth = gfx->width();
   const int16_t screenHeight = gfx->height();
   
-  // Colors match theme
-  uint16_t bgColor = currentTheme.background;
-  uint16_t textColor = currentTheme.text;
-  uint16_t accentColor = currentTheme.accent;
-  uint16_t secondaryColor = currentTheme.textSecondary;
+  // Swap schema by mode: dark mode uses theme as-is, light mode uses inverted
+  uint16_t bgColor, textColor, accentColor, secondaryColor;
+  if (darkMode) {
+    bgColor        = currentTheme.background;
+    textColor      = currentTheme.text;
+    accentColor    = currentTheme.accent;
+    secondaryColor = currentTheme.textSecondary;
+  } else {
+    bgColor        = ~currentTheme.background;
+    textColor      = ~currentTheme.text;
+    accentColor    = ~currentTheme.accent;
+    secondaryColor = ~currentTheme.textSecondary;
+  }
   
   // Clear screen with inverted background
   gfx->fillScreen(bgColor);
@@ -433,9 +513,9 @@ void showLeaderboard() {
       
       // Highlight top 3
       uint16_t entryColor = textColor;
-      if (i == 0) entryColor = 0xFFE0;      // Gold (yellow)
-      else if (i == 1) entryColor = 0xC618; // Silver (light gray)
-      else if (i == 2) entryColor = 0xFC60; // Bronze (orange)
+      if (i == 0) entryColor = 0x001F;      // Gold: ~0xFFE0, appears yellow/gold on inverted display
+      else if (i == 1) entryColor = 0x39E7; // Silver: ~0xC618, appears silver/gray on inverted display
+      else if (i == 2) entryColor = 0x039F; // Bronze: ~0xFC60, appears orange/bronze on inverted display
       
       gfx->setTextColor(entryColor);
       gfx->setTextSize(2);
