@@ -43,11 +43,12 @@ void showStatus(const String &line1, const String &line2 = "", uint16_t color = 
 }
 
 void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
-  // Sunrise + clean peeling wave + surfer silhouette
-  uint16_t skyColor = color;
-  uint16_t seaColor = currentTheme.accent;
-  uint16_t foamColor = currentTheme.text;
-  uint16_t surferColor = currentTheme.background;
+  // Sunrise + clean peeling wave + surfer silhouette (inverted palette)
+  auto invert565 = [](uint16_t c) -> uint16_t { return static_cast<uint16_t>(~c); };
+  uint16_t skyColor = invert565(color);
+  uint16_t seaColor = invert565(currentTheme.accent);
+  uint16_t foamColor = invert565(currentTheme.text);
+  uint16_t surferColor = invert565(currentTheme.background);
 
   // Rising sun
   gfx->fillCircle(x + 20, y - 34, 16, skyColor);
