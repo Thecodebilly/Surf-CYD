@@ -43,70 +43,80 @@ void showStatus(const String &line1, const String &line2 = "", uint16_t color = 
 }
 
 void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
-  // Draw sun with rays (good surf)
-  int16_t sunRadius = 30;
-  
-  // Draw sun rays (8 rays around the circle)
-  for (int i = 0; i < 8; i++) {
-    float angle = i * PI / 4.0;
-    int16_t x1 = x + cos(angle) * (sunRadius + 5);
-    int16_t y1 = y + sin(angle) * (sunRadius + 5);
-    int16_t x2 = x + cos(angle) * (sunRadius + 18);
-    int16_t y2 = y + sin(angle) * (sunRadius + 18);
-    gfx->drawLine(x1, y1, x2, y2, color);
-    gfx->drawLine(x1+1, y1, x2+1, y2, color);  // Thicker rays
-    gfx->drawLine(x1, y1+1, x2, y2+1, color);
+  // Sunrise + clean peeling wave + surfer silhouette
+  uint16_t skyColor = color;
+  uint16_t seaColor = currentTheme.accent;
+  uint16_t foamColor = currentTheme.text;
+  uint16_t surferColor = currentTheme.background;
+
+  // Rising sun
+  gfx->fillCircle(x + 20, y - 34, 16, skyColor);
+  for (int i = 0; i < 7; i++) {
+    float angle = (-0.25f + i * 0.25f) * PI;
+    int16_t x1 = x + 20 + cos(angle) * 20;
+    int16_t y1 = y - 34 + sin(angle) * 20;
+    int16_t x2 = x + 20 + cos(angle) * 30;
+    int16_t y2 = y - 34 + sin(angle) * 30;
+    gfx->drawLine(x1, y1, x2, y2, skyColor);
   }
-  
-  // Draw sun circle
-  gfx->fillCircle(x, y, sunRadius, color);
-  
-  // Draw happy face on sun
-  uint16_t faceColor = currentTheme.background;
-  gfx->fillCircle(x - 10, y - 8, 4, faceColor);  // Left eye
-  gfx->fillCircle(x + 10, y - 8, 4, faceColor);  // Right eye
-  
-  // Happy smile (arc)
-  for (int i = -15; i <= 15; i++) {
-    int16_t sx = x + i;
-    int16_t sy = y + 8 + (int16_t)(sqrt(max(0, 225 - i*i)) / 2);
-    gfx->drawPixel(sx, sy, faceColor);
-    gfx->drawPixel(sx, sy+1, faceColor);
-  }
+
+  // Clean wave face and lip
+  gfx->fillCircle(x - 10, y + 10, 42, seaColor);
+  gfx->fillCircle(x + 8, y + 12, 34, currentTheme.background);
+  gfx->drawCircle(x - 10, y + 10, 42, foamColor);
+  gfx->drawCircle(x - 11, y + 10, 42, foamColor);
+
+  // Foam streaks
+  gfx->drawLine(x - 34, y + 25, x - 3, y + 8, foamColor);
+  gfx->drawLine(x - 30, y + 30, x - 1, y + 16, foamColor);
+  gfx->drawLine(x - 22, y + 34, x + 2, y + 22, foamColor);
+
+  // Surfer + board
+  gfx->fillCircle(x + 4, y - 6, 4, surferColor);
+  gfx->drawLine(x + 4, y - 2, x + 1, y + 10, surferColor);
+  gfx->drawLine(x + 1, y + 10, x + 10, y + 15, surferColor);
+  gfx->drawLine(x + 2, y + 4, x + 12, y + 1, surferColor);
+  gfx->drawLine(x - 6, y + 15, x + 18, y + 10, surferColor);
+  gfx->drawLine(x - 5, y + 16, x + 19, y + 11, surferColor);
+
+  // Birds in distance
+  gfx->drawLine(x - 40, y - 42, x - 34, y - 46, foamColor);
+  gfx->drawLine(x - 34, y - 46, x - 28, y - 42, foamColor);
+  gfx->drawLine(x - 22, y - 38, x - 16, y - 42, foamColor);
+  gfx->drawLine(x - 16, y - 42, x - 10, y - 38, foamColor);
 }
 
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
-  // Draw storm cloud with rain (bad surf)
-  
-  // Cloud body (three overlapping circles)
-  gfx->fillCircle(x - 20, y, 18, currentTheme.cloudColor);
-  gfx->fillCircle(x, y - 10, 22, currentTheme.cloudColor);
-  gfx->fillCircle(x + 20, y, 18, currentTheme.cloudColor);
-  gfx->fillRect(x - 35, y, 70, 15, currentTheme.cloudColor);
-  
-  // Rain drops (diagonal lines)
-  uint16_t rainColor = currentTheme.cloudColor;
-  for (int i = 0; i < 5; i++) {
-    int16_t rx = x - 25 + i * 12;
-    int16_t ry = y + 18;
-    gfx->drawLine(rx, ry, rx + 3, ry + 10, rainColor);
-    gfx->drawLine(rx + 1, ry, rx + 4, ry + 10, rainColor);
-    gfx->drawLine(rx + 1, ry + 14, rx + 4, ry + 22, rainColor);
-    gfx->drawLine(rx + 2, ry + 14, rx + 5, ry + 22, rainColor);
+  // Storm front + choppy closeout + warning buoy
+  uint16_t stormColor = color;
+  uint16_t chopColor = currentTheme.cloudColor;
+  uint16_t lightningColor = currentTheme.text;
+  uint16_t buoyColor = currentTheme.background;
+
+  // Dark cloud shelf
+  gfx->fillCircle(x - 24, y - 10, 16, stormColor);
+  gfx->fillCircle(x - 2, y - 18, 20, stormColor);
+  gfx->fillCircle(x + 24, y - 10, 16, stormColor);
+  gfx->fillRect(x - 40, y - 10, 80, 20, stormColor);
+
+  // Lightning bolt
+  gfx->fillTriangle(x - 4, y + 2, x + 10, y + 2, x - 2, y + 24, lightningColor);
+  gfx->fillTriangle(x - 2, y + 24, x + 7, y + 24, x - 9, y + 44, lightningColor);
+
+  // Choppy wave lines
+  for (int i = 0; i < 4; i++) {
+    int16_t yOff = y + 20 + i * 8;
+    gfx->drawLine(x - 40, yOff, x - 24, yOff - 5, chopColor);
+    gfx->drawLine(x - 24, yOff - 5, x - 8, yOff, chopColor);
+    gfx->drawLine(x - 8, yOff, x + 8, yOff - 5, chopColor);
+    gfx->drawLine(x + 8, yOff - 5, x + 24, yOff, chopColor);
+    gfx->drawLine(x + 24, yOff, x + 40, yOff - 4, chopColor);
   }
-  
-  // Sad face on cloud
-  uint16_t faceColor = currentTheme.background;
-  gfx->fillCircle(x - 10, y - 5, 3, faceColor);  // Left eye
-  gfx->fillCircle(x + 10, y - 5, 3, faceColor);  // Right eye
-  
-  // Sad frown (inverted arc)
-  for (int i = -12; i <= 12; i++) {
-    int16_t sx = x + i;
-    int16_t sy = y + 10 - (int16_t)(sqrt(max(0, 144 - i*i)) / 2.5);
-    gfx->drawPixel(sx, sy, faceColor);
-    gfx->drawPixel(sx, sy-1, faceColor);
-  }
+
+  // Warning buoy with X mark
+  gfx->fillCircle(x - 28, y + 38, 8, buoyColor);
+  gfx->drawLine(x - 32, y + 34, x - 24, y + 42, stormColor);
+  gfx->drawLine(x - 24, y + 34, x - 32, y + 42, stormColor);
 }
 
 
