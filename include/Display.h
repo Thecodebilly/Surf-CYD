@@ -16,9 +16,11 @@ void drawButton(const Rect &r, const String &label, uint16_t bg, uint16_t fg, ui
 void showStatus(const String &line1, const String &line2, uint16_t color);
 void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color);
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color);
+void drawSettingsButton(Rect &settingsButton);
+void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton);
 void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton);
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
-                  Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton,
+                  Rect &settingsButton,
                   float waveHeightThreshold, float minTide, float maxTide, int tideDirection);
 
 #endif // DISPLAY_H

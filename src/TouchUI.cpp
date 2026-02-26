@@ -481,14 +481,27 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
   }
 }
 
-int handleMainScreenTouch(const Rect &forgetButton, const Rect &forgetLocationButton, 
-                          const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
-                          String &surfLocation, LocationInfo &cachedLocation, 
-                          float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
-                          float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection) {
+int handleMainScreenTouch(const Rect &settingsButton) {
   TouchPoint p = getTouchPoint();
   if (!p.pressed) return 0;
 
+  if (pointInRect(p.x, p.y, settingsButton)) {
+    return 3;  // Enter settings mode
+  }
+  return 0;
+}
+
+int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, const Rect &forgetLocationButton, 
+                              const Rect &themeButton, const Rect &waveButton, const Rect &tideButton,
+                              String &surfLocation, LocationInfo &cachedLocation, 
+                              float &waveHeightThreshold, float &minTide, float &maxTide, unsigned long &tideTimestamp,
+                              float &tideHeightOneHourAgo, unsigned long &tideDirectionTimestamp, int &currentTideDirection) {
+  TouchPoint p = getTouchPoint();
+  if (!p.pressed) return 0;
+
+  if (pointInRect(p.x, p.y, backButton)) {
+    return 4;  // Exit settings mode
+  }
   if (pointInRect(p.x, p.y, forgetButton)) {
     deleteWifiCredentials();
     WiFi.disconnect(true, true);

@@ -13,6 +13,9 @@
 // Global state
 LocationInfo cachedLocation;
 WifiCredentials wifiCredentials;
+bool inSettingsMode = false;
+Rect settingsButton = {0, 0, 0, 0};
+Rect backButton = {0, 0, 0, 0};
 Rect forgetButton = {0, 0, 0, 0};
 Rect forgetLocationButton = {0, 0, 0, 0};
 Rect themeButton = {0, 0, 0, 0};
@@ -176,23 +179,39 @@ void loop() {
   }
   // If less than 1 hour has passed, keep the previous direction
 
-  drawForecast(cachedLocation, forecast, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
+  drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
 
   uint32_t start = millis();
   while (millis() - start < REFRESH_INTERVAL_MS) {
-    int touchResult = handleMainScreenTouch(forgetButton, forgetLocationButton, themeButton, waveButton, tideButton,
-                                            surfLocation, cachedLocation, waveHeightThreshold, minTide, maxTide, tideTimestamp,
-                                            tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
-    if (touchResult == 1) {
-      // Location-affecting button: WiFi, Location, or Wave
-      ensureWifiConnected();
-      cachedLocation = LocationInfo();
-      locationRetryCount = 0;
-      surfRetryCount = 0;
-      break;
-    } else if (touchResult == 2) {
-      // Theme button: just redraw with new theme, keep location
-      drawForecast(cachedLocation, forecast, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
+    if (inSettingsMode) {
+      // Handle settings screen
+      int touchResult = handleSettingsScreenTouch(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton,
+                                                   surfLocation, cachedLocation, waveHeightThreshold, minTide, maxTide, tideTimestamp,
+                                                   tideHeightOneHourAgo, tideDirectionTimestamp, currentTideDirection);
+      if (touchResult == 1) {
+        // Location-affecting button: WiFi or Location
+        inSettingsMode = false;
+        ensureWifiConnected();
+        cachedLocation = LocationInfo();
+        locationRetryCount = 0;
+        surfRetryCount = 0;
+        break;
+      } else if (touchResult == 2) {
+        // Theme or Wave or Tide button: redraw settings screen
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton);
+      } else if (touchResult == 4) {
+        // Back button: exit settings
+        inSettingsMode = false;
+        drawForecast(cachedLocation, forecast, settingsButton, waveHeightThreshold, minTide, maxTide, currentTideDirection);
+      }
+    } else {
+      // Handle main screen
+      int touchResult = handleMainScreenTouch(settingsButton);
+      if (touchResult == 3) {
+        // Settings button: enter settings mode
+        inSettingsMode = true;
+        drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton);
+      }
     }
     delay(50);
   }

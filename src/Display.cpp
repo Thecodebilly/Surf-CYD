@@ -180,8 +180,58 @@ void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &them
   drawButton(tideButton, "Tide", currentTheme.tideButtonColor, currentTheme.text, 1);
 }
 
+void drawSettingsButton(Rect &settingsButton) {
+  // Single settings button in top right corner
+  int btnW = 60;
+  int btnH = 24;
+  int startX = gfx->width() - btnW - 5;
+  int startY = 5;
+  
+  settingsButton = {int16_t(startX), int16_t(startY), int16_t(btnW), int16_t(btnH)};
+  drawButton(settingsButton, "Settings", currentTheme.buttonPrimary, currentTheme.text, 1);
+}
+
+void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton) {
+  gfx->fillScreen(currentTheme.background);
+  
+  // Title
+  gfx->setTextColor(currentTheme.textSecondary);
+  gfx->setTextSize(4);
+  gfx->setCursor(10, 20);
+  gfx->println("Settings");
+  
+  // Button layout - centered grid
+  int btnW = 140;
+  int btnH = 40;
+  int gap = 10;
+  int startX = (gfx->width() - (btnW * 2 + gap)) / 2;
+  int startY = 80;
+  
+  // Row 1
+  forgetButton = {int16_t(startX), int16_t(startY), int16_t(btnW), int16_t(btnH)};
+  drawButton(forgetButton, "Reset WiFi", currentTheme.success, currentTheme.text, 2);
+  
+  themeButton = {int16_t(startX + btnW + gap), int16_t(startY), int16_t(btnW), int16_t(btnH)};
+  drawButton(themeButton, darkMode ? "Light Mode" : "Dark Mode", currentTheme.text, currentTheme.background, 2);
+  
+  // Row 2
+  forgetLocationButton = {int16_t(startX), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
+  drawButton(forgetLocationButton, "Reset Loc", currentTheme.buttonWarning, currentTheme.text, 2);
+  
+  waveButton = {int16_t(startX + btnW + gap), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
+  drawButton(waveButton, "Reset Wave", currentTheme.buttonDanger, currentTheme.text, 2);
+  
+  // Row 3
+  tideButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
+  drawButton(tideButton, "Reset Tide", currentTheme.tideButtonColor, currentTheme.text, 2);
+  
+  // Back button
+  backButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
+  drawButton(backButton, "< Back", currentTheme.buttonSecondary, currentTheme.text, 2);
+}
+
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
-                  Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton,
+                  Rect &settingsButton,
                   float waveHeightThreshold, float minTide, float maxTide, int tideDirection) {
   gfx->fillScreen(currentTheme.background);
   int16_t w = gfx->width();
@@ -342,5 +392,5 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setCursor(tideX - 5, tideBarY + tideBarH + 8);
   gfx->println(String(tideHeightFeet, 1) + "ft");
 
-  drawForgetButton(forgetButton, forgetLocationButton, themeButton, waveButton, tideButton);
+  drawSettingsButton(settingsButton);
 }
