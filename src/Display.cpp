@@ -203,7 +203,7 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
   gfx->println("Settings");
   
   // Button layout - centered grid
-  int btnW = 140;
+  int btnW = 185;
   int btnH = 40;
   int gap = 10;
   int startX = (gfx->width() - (btnW * 2 + gap)) / 2;
