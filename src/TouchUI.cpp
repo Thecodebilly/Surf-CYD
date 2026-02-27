@@ -440,6 +440,11 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
       while (touch.touched()) delay(20);
       // Ensure we have valid location coordinates before saving
       if (cachedLocation.valid) {
+        // Clear all tide data — new location means stale tide files
+        deleteTideBounds();
+        deleteTideHourlyCheck();
+        deleteTideDirection();
+        clearTideStationCache();
         saveSurfLocation(cachedLocation);
         return cachedLocation.displayName;
       } else {
@@ -463,6 +468,10 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
         cachedLocation.latitude = DEFAULT_LOCATION_1_LAT;
         cachedLocation.longitude = DEFAULT_LOCATION_1_LON;
         cachedLocation.valid = true;
+        deleteTideBounds();
+        deleteTideHourlyCheck();
+        deleteTideDirection();
+        clearTideStationCache();
         saveSurfLocation(cachedLocation);
         return cachedLocation.displayName;
       } else if (selected == 2) {
@@ -470,6 +479,10 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
         cachedLocation.latitude = DEFAULT_LOCATION_2_LAT;
         cachedLocation.longitude = DEFAULT_LOCATION_2_LON;
         cachedLocation.valid = true;
+        deleteTideBounds();
+        deleteTideHourlyCheck();
+        deleteTideDirection();
+        clearTideStationCache();
         saveSurfLocation(cachedLocation);
         return cachedLocation.displayName;
       }

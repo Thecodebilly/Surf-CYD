@@ -225,7 +225,7 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
   
   // Row 3: Leaderboard | View Files
   leaderboardButton = {int16_t(startX), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
-  drawButton(leaderboardButton, "Leaderboard", 0x001F, currentTheme.text, 2);
+  drawButton(leaderboardButton, "Leaderboard", 0x015F, currentTheme.text, 2);
 
   filesButton = {int16_t(startX + btnW + gap), int16_t(startY + (btnH + gap) * 2), int16_t(btnW), int16_t(btnH)};
   drawButton(filesButton, "View Files", currentTheme.buttonList, currentTheme.text, 2);
@@ -248,6 +248,11 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
                   Rect &settingsButton, Rect &badSurfGraphicRect,
                   float waveHeightThreshold, float minTide, float maxTide, int tideDirection) {
+  Serial.printf("[DISPLAY] drawForecast: tideH=%.3fm (%.2fft), min=%.3fm (%.2fft), max=%.3fm (%.2fft), dir=%d\n",
+    forecast.tideHeight, forecast.tideHeight * 3.28084f,
+    minTide, minTide * 3.28084f,
+    maxTide, maxTide * 3.28084f,
+    tideDirection);
   gfx->fillScreen(currentTheme.background);
   int16_t w = gfx->width();
 
@@ -260,6 +265,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setTextSize(4);
   gfx->setCursor(10, 38);
   String name = location.displayName;
+  if (name.length() > 10) gfx->setTextSize(3);
   if (name.length() > 20) {
     gfx->setTextSize(2);
     int firstComma = name.indexOf(',');
@@ -270,7 +276,6 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
       }
     }
   }
-  if (name.length() > 20) gfx->setTextSize(3);
   if (name.length() > 30) name = name.substring(0, 30) + "...";
   gfx->println(name);
 
@@ -322,85 +327,81 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setCursor(windValueX, 228);
   gfx->println(String(forecast.windSpeed, 1) + "mph");
 
-  // Bottom row: arrows and tide
-  const int16_t labelY = 252;
+  // Bottom row: direction arrows
   const int16_t arrowY = 292;
   const int16_t swellCenterX = 90;
-  const int16_t windCenterX = windLabelX + 65;  // Will be 249
+  const int16_t windCenterX = windLabelX + 65;  // 249
 
   drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection + 180.0f, YELLOW);
   uint16_t windArrowColor = darkMode ? BLACK : WHITE;
   drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection + 180.0f, windArrowColor);
 
-  gfx->setTextColor(currentTheme.periodDirNumberColor);
-  gfx->setTextSize(3);
-  gfx->setCursor(64, 360);
-  gfx->println(String(forecast.waveDirection, 0) + (char)248);
-
-  gfx->setTextColor(currentTheme.accent);
-  gfx->setCursor(275, 360);  // Moved 100 pixels left from 375
-  gfx->println(String(forecast.windDirection, 0) + (char)248);
-
-  // Tide bar (vertical) - positioned to the right of wind arrow
-  const int16_t tideX = 420;
-  const int16_t tideBarY = 195;
+  // Tide bar (vertical)
+  const int16_t tideX    = 420;
+  const int16_t tideBarY = 185;
   const int16_t tideBarW = 45;
   const int16_t tideBarH = 96;
 
-  // Compute how far the current tide is through today's low→high range (0.0 – 1.0)
+  float tideHeightFeet = forecast.tideHeight * 3.28084f;
+  float minTideFeet    = minTide * 3.28084f;
+  float maxTideFeet    = maxTide * 3.28084f;
+
+  // Normalise current position within today's low→high range (0=low, 1=high)
   float tideRange = maxTide - minTide;
   float tideNormalized = 0.0f;
   if (tideRange > 0.01f) {
     tideNormalized = (forecast.tideHeight - minTide) / tideRange;
     tideNormalized = max(0.0f, min(1.0f, tideNormalized));
   }
-  int tidePercent = (int)(tideNormalized * 100.0f + 0.5f);
 
-  // Fill bar from bottom proportional to position in today's range
-  uint16_t tideOutlineColor = darkMode ? BLACK : WHITE;
-  uint16_t tideFillColor = darkMode ? YELLOW : 0xFD20;
+  // Outline + fill
+  uint16_t tideOutlineColor = currentTheme.text;
+  uint16_t tideFillColor    = currentTheme.periodDirTextColor;
   gfx->drawRect(tideX, tideBarY, tideBarW, tideBarH, tideOutlineColor);
   int16_t fillHeight = (int16_t)(tideNormalized * (tideBarH - 4));
   if (fillHeight > 0) {
     gfx->fillRect(tideX + 2, tideBarY + tideBarH - 2 - fillHeight, tideBarW - 4, fillHeight, tideFillColor);
   }
+
+  // "TIDE" text vertically centered in bar
+  gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(1);
-  // Draw "TIDE" text vertically centered in the bar
-  const char* tideText = "TIDE";
+  const char *tideText    = "TIDE";
   const int16_t charSpacing = 10;
-  const int16_t charWidth = 6;
-  const int16_t textHeight = 4 * charSpacing;
-  int16_t startY = tideBarY + (tideBarH - textHeight) / 2;
-  int16_t textX = tideX + (tideBarW - charWidth) / 2;
+  const int16_t charWidth   = 6;
+  const int16_t textHeight  = 4 * charSpacing;
+  int16_t tideTextStartY  = tideBarY + (tideBarH - textHeight) / 2;
+  int16_t tideTextX       = tideX + (tideBarW - charWidth) / 2;
   for (int i = 0; i < 4; i++) {
-    gfx->setCursor(textX, startY + i * charSpacing);
+    gfx->setCursor(tideTextX, tideTextStartY + i * charSpacing);
     gfx->print(tideText[i]);
   }
 
-  // Tide direction arrow inside bar (above or below text)
-  int16_t arrowCenterX = tideX + tideBarW / 2;
-  int16_t arrowSize = 3;
-  uint16_t arrowColor = darkMode ? BLACK : WHITE;
+  // Direction arrow inside bar
+  int16_t arrowCX  = tideX + tideBarW / 2;
+  int16_t arrowSz  = 3;
+  uint16_t arrowCol = currentTheme.text;
   if (tideDirection > 0) {
-    int16_t tideArrowY = startY - 10;
-    gfx->fillTriangle(arrowCenterX, tideArrowY - arrowSize,
-                      arrowCenterX - arrowSize, tideArrowY + arrowSize,
-                      arrowCenterX + arrowSize, tideArrowY + arrowSize,
-                      arrowColor);
-  } else {
-    int16_t tideArrowY = startY + textHeight + 10;
-    gfx->fillTriangle(arrowCenterX, tideArrowY + arrowSize,
-                      arrowCenterX - arrowSize, tideArrowY - arrowSize,
-                      arrowCenterX + arrowSize, tideArrowY - arrowSize,
-                      arrowColor);
+    int16_t ay = tideTextStartY - 10;
+    gfx->fillTriangle(arrowCX, ay - arrowSz, arrowCX - arrowSz, ay + arrowSz, arrowCX + arrowSz, ay + arrowSz, arrowCol);
+  } else if (tideDirection < 0) {
+    int16_t ay = tideTextStartY + textHeight + 10;
+    gfx->fillTriangle(arrowCX, ay + arrowSz, arrowCX - arrowSz, ay - arrowSz, arrowCX + arrowSz, ay - arrowSz, arrowCol);
   }
 
-  // Tide height in feet below the bar
-  float tideHeightFeet = forecast.tideHeight * 3.28084f;
+  // Current tide in ft — below bar
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(2);
-  gfx->setCursor(tideX - 17, tideBarY + tideBarH + 5);
-  gfx->println(String(tideHeightFeet, 1) + "ft");
+  gfx->setCursor(tideX - 5, tideBarY + tideBarH + 4);
+  gfx->print(String(tideHeightFeet, 1) + "ft");
+
+  // H / L tiny labels above and below bar
+  gfx->setTextColor(currentTheme.textSecondary);
+  gfx->setTextSize(1);
+  gfx->setCursor(tideX + 2, tideBarY - 8);
+  gfx->print("H " + String(maxTideFeet, 1) + "ft");
+  gfx->setCursor(tideX + 2, tideBarY + tideBarH + 20);
+  gfx->print("L " + String(minTideFeet, 1) + "ft");
 
   drawSettingsButton(settingsButton);
 }

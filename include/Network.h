@@ -20,5 +20,6 @@ SurfForecast fetchSurfForecast(float latitude, float longitude);
 // NOAA Tide functions
 String findNearestTideStation(float latitude, float longitude);
 float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTide);
+void clearTideStationCache();
 
 #endif // NETWORK_H

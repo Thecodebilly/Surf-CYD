@@ -13,6 +13,18 @@ extern Theme currentTheme;
 // Forward declaration
 void showStatus(const String &line1, const String &line2, uint16_t color);
 
+// File-scope tide station cache (can be cleared from outside via clearTideStationCache)
+static String cachedStationId = "";
+static float cachedStationLat = 0.0f;
+static float cachedStationLon = 0.0f;
+
+void clearTideStationCache() {
+  cachedStationId = "";
+  cachedStationLat = 0.0f;
+  cachedStationLon = 0.0f;
+  Serial.println("[TIDE] Station cache cleared");
+}
+
 String urlEncode(const String &value) {
   String encoded;
   const char *hex = "0123456789ABCDEF";
@@ -165,14 +177,15 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
   char dateStr[16];
   strftime(dateStr, sizeof(dateStr), "%Y%m%d", timeinfo);
   String currentDate = String(dateStr);
+  String cacheKey = currentDate + "_gmt"; // suffix ensures old lst_ldt cache is ignored
   
   // Check if we have cached tide bounds for today
   String cachedDate = "";
   bool hasCachedBounds = loadTideBounds(minTide, maxTide, cachedDate);
-  
-  // Invalidate cached bounds if they're invalid (both 0) or from a different day
-  if (hasCachedBounds && (cachedDate != currentDate || (minTide == 0.0f && maxTide == 0.0f))) {
-    logInfo("Cached tide bounds invalid or from different day, refetching");
+
+  // Invalidate if stale date, wrong tz key, or both zero
+  if (hasCachedBounds && (cachedDate != cacheKey || (minTide == 0.0f && maxTide == 0.0f))) {
+    logInfo("Cached tide bounds invalid or stale (" + cachedDate + " vs " + cacheKey + "), refetching");
     hasCachedBounds = false;
   }
   
@@ -181,10 +194,11 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     logInfo("Fetching NOAA tides for station " + stationId + " for today: " + currentDate);
     
     HTTPClient http;
-    // Fetch only today's predictions (begin_date = end_date = today)
+    // Fetch only today's predictions in GMT so hours match the device's UTC clock
     String url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&station=" + stationId + 
-                 "&datum=MLLW&time_zone=lst_ldt&units=english&interval=h&begin_date=" + currentDate + 
+                 "&datum=MLLW&time_zone=gmt&units=english&interval=h&begin_date=" + currentDate + 
                  "&end_date=" + currentDate + "&format=json";
+    Serial.printf("[TIDE] Non-cached URL: %s\n", url.c_str());
     
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.begin(url);
@@ -225,11 +239,22 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     }
     
     logInfo("NOAA returned " + String(predictions.size()) + " tide predictions for today");
+    Serial.printf("[TIDE] predictions count=%d, current hour=%d\n", predictions.size(), timeinfo->tm_hour);
     
-    // Get the first prediction (most recent/current)
-    // "v" is a string in the JSON, need to convert to float
-    String currentTideStr = predictions[0]["v"] | "0.0";
+    // Find the prediction for the current hour (predictions[0] is always midnight)
+    int currentHourNow = timeinfo->tm_hour;
+    String currentTideStr = predictions[0]["v"] | "0.0"; // fallback to midnight
+    for (JsonVariant pred : predictions) {
+      String timeStr = pred["t"] | "";
+      int predHour = timeStr.length() >= 13 ? timeStr.substring(11, 13).toInt() : -1;
+      if (predHour == currentHourNow) {
+        currentTideStr = pred["v"] | "0.0";
+        Serial.printf("[TIDE] Matched hour %d: t=%s v=%s\n", currentHourNow, timeStr.c_str(), currentTideStr.c_str());
+        break;
+      }
+    }
     float currentTideHeight = currentTideStr.toFloat();
+    Serial.printf("[TIDE] currentTideHeight=%.2f ft\n", currentTideHeight);
     
     // Find min and max from all predictions for today
     float minTideFeet = currentTideHeight;
@@ -247,23 +272,26 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     minTide = minTideFeet * 0.3048f;
     maxTide = maxTideFeet * 0.3048f;
     
-    // Save today's bounds to file for reuse
-    saveTideBounds(minTide, maxTide, currentDate);
+    // Save today's bounds to file for reuse (with _gmt suffix to distinguish from old lst_ldt cache)
+    saveTideBounds(minTide, maxTide, cacheKey);
     
     logInfo("NOAA tide - Current: " + String(currentTideHeight, 2) + " ft (" + String(currentTideMeters, 2) + " m), " +
             "Daily Range: " + String(minTideFeet, 2) + " to " + String(maxTideFeet, 2) + " ft (" + 
             String(minTide, 2) + " to " + String(maxTide, 2) + " m)");
+    Serial.printf("[TIDE] RETURNING currentM=%.3f, minM=%.3f, maxM=%.3f\n", currentTideMeters, minTide, maxTide);
     
     return currentTideMeters;
   } else {
     // We have today's bounds cached, just fetch current tide height
-    logInfo("Using cached tide bounds for " + currentDate + ": " + String(minTide, 2) + "m to " + String(maxTide, 2) + "m");
+    logInfo("Using cached tide bounds for " + cacheKey + ": " + String(minTide, 2) + "m to " + String(maxTide, 2) + "m");
+    Serial.printf("[TIDE] Cached branch: minM=%.3f maxM=%.3f cacheKey=%s\n", minTide, maxTide, cacheKey.c_str());
     
     HTTPClient http;
-    // Fetch current tide prediction only (for the next hour)
+    // Fetch full day predictions in GMT so hours match the device's UTC clock
     String url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&station=" + stationId + 
-                 "&datum=MLLW&time_zone=lst_ldt&units=english&interval=h&begin_date=" + currentDate + 
-                 "&end_date=" + currentDate + "&format=json&range=1";
+                 "&datum=MLLW&time_zone=gmt&units=english&interval=h&begin_date=" + currentDate + 
+                 "&end_date=" + currentDate + "&format=json";
+    Serial.printf("[TIDE] Cached URL: %s\n", url.c_str());
     
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.begin(url);
@@ -277,7 +305,7 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     String payload = http.getString();
     http.end();
     
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(8 * 1024);
     DeserializationError error = deserializeJson(doc, payload);
     if (error) {
       logError("Failed to parse NOAA tide JSON: " + String(error.c_str()));
@@ -290,11 +318,24 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
       return 0.0f;
     }
     
-    String currentTideStr = predictions[0]["v"] | "0.0";
+    // Find the prediction for the current hour (predictions[0] is always midnight)
+    int currentHourNow = timeinfo->tm_hour;
+    String currentTideStr = predictions[0]["v"] | "0.0"; // fallback to first
+    Serial.printf("[TIDE] Cached branch: predictions=%d, currentHour=%d\n", predictions.size(), currentHourNow);
+    for (JsonVariant pred : predictions) {
+      String timeStr = pred["t"] | "";
+      int predHour = timeStr.length() >= 13 ? timeStr.substring(11, 13).toInt() : -1;
+      if (predHour == currentHourNow) {
+        currentTideStr = pred["v"] | "0.0";
+        Serial.printf("[TIDE] Cached matched hour %d: t=%s v=%s\n", currentHourNow, timeStr.c_str(), currentTideStr.c_str());
+        break;
+      }
+    }
     float currentTideHeight = currentTideStr.toFloat();
     float currentTideMeters = currentTideHeight * 0.3048f;
     
     logInfo("Current tide: " + String(currentTideHeight, 2) + " ft (" + String(currentTideMeters, 2) + " m)");
+    Serial.printf("[TIDE] Cached RETURNING currentM=%.3f\n", currentTideMeters);
     
     return currentTideMeters;
   }
@@ -354,17 +395,14 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   }
   
   // Fetch tide data from NOAA
-  // Use cached station ID if available, otherwise find nearest
-  static String cachedStationId = "";
-  static float cachedLat = 0.0f;
-  static float cachedLon = 0.0f;
+  // Use file-scope cached station ID (can be cleared when location changes)
   
   // Check if we need to find a new station (location changed significantly)
-  if (cachedStationId.isEmpty() || abs(latitude - cachedLat) > 0.5f || abs(longitude - cachedLon) > 0.5f) {
+  if (cachedStationId.isEmpty() || abs(latitude - cachedStationLat) > 0.5f || abs(longitude - cachedStationLon) > 0.5f) {
     logInfo("Finding nearest NOAA tide station for lat=" + String(latitude, 6) + ", lon=" + String(longitude, 6));
     cachedStationId = findNearestTideStation(latitude, longitude);
-    cachedLat = latitude;
-    cachedLon = longitude;
+    cachedStationLat = latitude;
+    cachedStationLon = longitude;
   } else {
     logInfo("Using cached NOAA station: " + cachedStationId + " (lat=" + String(latitude, 6) + ", lon=" + String(longitude, 6) + ")");
   }
@@ -372,6 +410,7 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   // Fetch tide height from NOAA
   if (!cachedStationId.isEmpty()) {
     forecast.tideHeight = fetchNOAATideHeight(cachedStationId, forecast.minTide, forecast.maxTide);
+    Serial.printf("[TIDE] forecast: height=%.3fm, min=%.3fm, max=%.3fm\n", forecast.tideHeight, forecast.minTide, forecast.maxTide);
   } else {
     logError("No NOAA tide station found, using default tide height");
     forecast.tideHeight = 0.0f;
