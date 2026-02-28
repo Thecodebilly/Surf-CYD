@@ -21,6 +21,7 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
 WifiCredentials runWifiSetupTouch();
 String runLocationSetupTouch(LocationInfo &cachedLocation);
 float runWaveHeightSetupTouch();
+void runSettingsScreenModal();
 int selectLocationFromList(const std::vector<LocationInfo> &locations);
 int selectDefaultLocation();
 

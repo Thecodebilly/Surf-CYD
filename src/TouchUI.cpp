@@ -4,6 +4,7 @@
 #include "Display.h"
 #include "Storage.h"
 #include "Network.h"
+#include "Game.h"
 #include <WiFi.h>
 #include <SPI.h>
 
@@ -141,12 +142,58 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
   }
 }
 
+// Extern globals from main.cpp used by the settings modal
+extern String surfLocation;
+extern LocationInfo cachedLocation;
+extern float waveHeightThreshold;
+
+void runSettingsScreenModal() {
+  Rect backBtn = {0, 0, 0, 0};
+  Rect forgetBtn = {0, 0, 0, 0};
+  Rect forgetLocationBtn = {0, 0, 0, 0};
+  Rect themeBtn = {0, 0, 0, 0};
+  Rect waveBtn = {0, 0, 0, 0};
+  Rect tideBtn = {0, 0, 0, 0};
+  Rect filesBtn = {0, 0, 0, 0};
+  Rect leaderboardBtn = {0, 0, 0, 0};
+
+  drawSettingsScreen(backBtn, forgetBtn, forgetLocationBtn, themeBtn, waveBtn, tideBtn, filesBtn, leaderboardBtn);
+
+  while (true) {
+    int result = handleSettingsScreenTouch(backBtn, forgetBtn, forgetLocationBtn,
+                                           themeBtn, waveBtn, tideBtn, filesBtn,
+                                           leaderboardBtn, surfLocation, cachedLocation,
+                                           waveHeightThreshold);
+    if (result == 0) {
+      delay(20);
+    } else if (result == 1) {
+      // WiFi/location reset — return to caller's setup screen
+      return;
+    } else if (result == 2) {
+      // Theme/wave change — redraw settings
+      drawSettingsScreen(backBtn, forgetBtn, forgetLocationBtn, themeBtn, waveBtn, tideBtn, filesBtn, leaderboardBtn);
+    } else if (result == 4) {
+      // Back — return to setup screen
+      return;
+    } else if (result == 5) {
+      // View files
+      viewFilesScreen(backBtn);
+      drawSettingsScreen(backBtn, forgetBtn, forgetLocationBtn, themeBtn, waveBtn, tideBtn, filesBtn, leaderboardBtn);
+    } else if (result == 7) {
+      // Leaderboard
+      showLeaderboard();
+      drawSettingsScreen(backBtn, forgetBtn, forgetLocationBtn, themeBtn, waveBtn, tideBtn, filesBtn, leaderboardBtn);
+    }
+  }
+}
+
 WifiCredentials runWifiSetupTouch() {
   WifiCredentials creds;
   Rect ssidButton = {12, 64, 296, 36};
   Rect passButton = {12, 116, 236, 36};
   Rect passToggleButton = {254, 116, 54, 36};
   Rect connectButton = {12, 172, 296, 44};
+  Rect settingsBtn = {0, 0, 0, 0};
   bool showPassword = false;
   
   bool needsRedraw = true;
@@ -173,6 +220,7 @@ WifiCredentials runWifiSetupTouch() {
       drawButton(passButton, "PASS: " + masked, currentTheme.buttonSecondary, currentTheme.text, 1);
       drawButton(passToggleButton, showPassword ? "Hide" : "Show", currentTheme.buttonWarning, currentTheme.text, 1);
       drawButton(connectButton, "Save + Connect", currentTheme.buttonPrimary, currentTheme.text, 2);
+      drawSettingsButton(settingsBtn);
       needsRedraw = false;
     }
 
@@ -199,6 +247,10 @@ WifiCredentials runWifiSetupTouch() {
       creds.valid = true;
       saveWifiCredentials(creds);
       return creds;
+    } else if (pointInRect(p.x, p.y, settingsBtn)) {
+      while (touch.touched()) delay(20);
+      runSettingsScreenModal();
+      needsRedraw = true;
     }
 
     while (touch.touched()) delay(20);
@@ -304,6 +356,7 @@ float runWaveHeightSetupTouch() {
   Rect incButton = {220, 190, 60, 45};  // Increase
   Rect saveButton = {20, 250, 140, 50};
   Rect skipButton = {180, 250, 140, 50};
+  Rect settingsBtn = {0, 0, 0, 0};
   
   bool needsRedraw = true;
 
@@ -338,6 +391,7 @@ float runWaveHeightSetupTouch() {
       drawButton(incButton, "+", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawButton(skipButton, "3 ft", currentTheme.buttonList, currentTheme.text, 2);
+      drawSettingsButton(settingsBtn);
       
       needsRedraw = false;
     }
@@ -365,6 +419,10 @@ float runWaveHeightSetupTouch() {
       selectedThreshold = 3.0f;
       saveWaveHeightPreference(selectedThreshold);
       return selectedThreshold;
+    } else if (pointInRect(p.x, p.y, settingsBtn)) {
+      while (touch.touched()) delay(20);
+      runSettingsScreenModal();
+      needsRedraw = true;
     }
 
     while (touch.touched()) delay(20);
@@ -377,6 +435,7 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
   Rect locationButton = {12, 76, 296, 44};
   Rect saveButton = {12, 140, 144, 44};
   Rect skipButton = {164, 140, 144, 44};
+  Rect settingsBtn = {0, 0, 0, 0};
   
   bool needsRedraw = true;
 
@@ -393,6 +452,7 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
       drawButton(locationButton, shownLocation, currentTheme.buttonSecondary, currentTheme.text, 1);
       drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawButton(skipButton, "Default", currentTheme.buttonList, currentTheme.text, 2);
+      drawSettingsButton(settingsBtn);
       needsRedraw = false;
     }
 
@@ -459,6 +519,10 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
         delay(2000);
         needsRedraw = true;
       }
+    } else if (pointInRect(p.x, p.y, settingsBtn)) {
+      while (touch.touched()) delay(20);
+      runSettingsScreenModal();
+      needsRedraw = true;
     } else if (pointInRect(p.x, p.y, skipButton)) {
       while (touch.touched()) delay(20);
       // Show default location selection
