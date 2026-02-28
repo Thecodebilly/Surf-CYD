@@ -21,7 +21,7 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
 void drawForgetButton(Rect &forgetButton, Rect &forgetLocationButton, Rect &themeButton, Rect &waveButton, Rect &tideButton);
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
                   Rect &settingsButton, Rect &badSurfGraphicRect,
-                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection);
+                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection, bool hasTideFile);
 void viewFilesScreen(Rect &backButton);
 void drawWelcomeScreen(Rect &setupButton);
 void drawNameConfirmScreen(const String &name, Rect &confirmButton);

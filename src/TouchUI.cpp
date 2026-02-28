@@ -159,7 +159,7 @@ WifiCredentials runWifiSetupTouch() {
       gfx->setCursor(10, 10);
       gfx->println("Wi-Fi Setup");
 
-      drawButton(ssidButton, "SSID: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), 
+      drawButton(ssidButton, "Wifi name: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), 
                  currentTheme.buttonSecondary, currentTheme.text, 1);
       String masked = "<tap to set>";
       if (!creds.password.isEmpty()) {
@@ -184,7 +184,7 @@ WifiCredentials runWifiSetupTouch() {
 
     if (pointInRect(p.x, p.y, ssidButton)) {
       while (touch.touched()) delay(20);
-      creds.ssid = touchKeyboardInput("Enter SSID", creds.ssid, false);
+      creds.ssid = touchKeyboardInput("Enter Wifi name", creds.ssid, false);
       needsRedraw = true;
     } else if (pointInRect(p.x, p.y, passButton)) {
       while (touch.touched()) delay(20);

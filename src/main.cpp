@@ -33,6 +33,7 @@ int locationRetryCount = 0;
 int surfRetryCount = 0;
 float waveHeightThreshold = 1.0f;
 int currentTideDirection = 0;
+bool currentHasTideFile = false;
 
 void ensureWifiConnected() {
   wifiCredentials = loadWifiCredentials();
@@ -188,6 +189,11 @@ void loop() {
       deleteSurfLocation();
       deleteWaveHeightPreference();
       deleteThemePreference();
+      deleteTideBounds();
+      deleteTideDirection();
+      deleteTideHourlyCheck();
+      currentHasTideFile = false;
+      currentTideDirection = 0;
       surfRetryCount = 0;
       locationRetryCount = 0;
       surfLocation = "";
@@ -203,54 +209,47 @@ void loop() {
   
   // Successfully fetched surf, reset retry count
   surfRetryCount = 0;
-  
-  // New hourly tide direction tracking system
+
+  // Tide direction: compare current height to stored snapshot, update snapshot every 30 min
   time_t currentTime = time(nullptr);
-  struct tm *timeinfo = localtime(&currentTime);
-  int currentHour = timeinfo->tm_hour;
-  
-  // Load saved hourly check data
-  float hourStartHeight = 0.0f;
-  time_t hourStartTime = 0;
-  int savedHour = -1;
-  bool hasHourlyData = loadTideHourlyCheck(hourStartHeight, hourStartTime, savedHour);
-  
-  if (!hasHourlyData || savedHour != currentHour) {
-    // New hour - record the start of this hour
-    logInfo("Starting tide tracking for hour " + String(currentHour));
-    saveTideHourlyCheck(forecast.tideHeight, currentTime, currentHour);
-    currentTideDirection = 0;  // Unknown direction at start of hour
+  currentHasTideFile = SPIFFS.exists(TIDE_DIRECTION_FILE);
+
+  if (!currentHasTideFile) {
+    // No snapshot yet — backdate the timestamp by one refresh interval so the
+    // very next cycle has a 30-min comparison window and can show an arrow.
+    time_t backdatedTime = currentTime - (REFRESH_INTERVAL_MS / 1000);
+    saveTideDirection(forecast.tideHeight, backdatedTime, 0);
+    currentTideDirection = 0;
+    currentHasTideFile = true;  // file now exists; arrow will evaluate next cycle
+    logInfo("Tide snapshot seeded (backdated " + String(REFRESH_INTERVAL_MS / 60000) + " min)");
   } else {
-    // We're in the same hour - check if enough time has passed to determine direction
-    int minutesPassed = (currentTime - hourStartTime) / 60;
-    
-    if (minutesPassed >= 50) {
-      // At least 50 minutes into the hour - determine direction
-      float heightChange = forecast.tideHeight - hourStartHeight;
-      
-      if (heightChange > 0.05f) {
-        currentTideDirection = 1;  // Rising
-        logInfo("Tide rising: +" + String(heightChange, 2) + "m over " + String(minutesPassed) + " minutes");
-      } else if (heightChange < -0.05f) {
-        currentTideDirection = -1;  // Falling
-        logInfo("Tide falling: " + String(heightChange, 2) + "m over " + String(minutesPassed) + " minutes");
-      } else {
-        currentTideDirection = 0;  // Slack tide
-        logInfo("Slack tide: " + String(heightChange, 2) + "m over " + String(minutesPassed) + " minutes");
-      }
-      
-      // Save the determined direction (simplified tide direction storage)
-      saveTideDirection(hourStartHeight, hourStartTime, currentTideDirection);
+    float storedHeight = 0.0f;
+    time_t storedTimestamp = 0;
+    int storedDir = 0;
+    loadTideDirection(storedHeight, storedTimestamp, storedDir);
+
+    // Determine direction from change since last snapshot
+    float heightChange = forecast.tideHeight - storedHeight;
+    if (heightChange > 0.01f) {
+      currentTideDirection = 1;   // Rising
+      logInfo("Tide rising: +" + String(heightChange, 3) + "m since snapshot");
+    } else if (heightChange < -0.01f) {
+      currentTideDirection = -1;  // Falling
+      logInfo("Tide falling: " + String(heightChange, 3) + "m since snapshot");
     } else {
-      // Not enough time passed - load previous direction if available
-      float tempHeight;
-      time_t tempTime;
-      loadTideDirection(tempHeight, tempTime, currentTideDirection);
-      logInfo("Using previous tide direction (" + String(currentTideDirection) + "), " + String(minutesPassed) + " minutes into hour");
+      currentTideDirection = 0;   // Slack
+      logInfo("Slack tide: " + String(heightChange, 3) + "m since snapshot");
+    }
+
+    // Update snapshot every 30 minutes
+    int minsSinceSnapshot = (int)((currentTime - storedTimestamp) / 60);
+    if (minsSinceSnapshot >= 30) {
+      saveTideDirection(forecast.tideHeight, currentTime, currentTideDirection);
+      logInfo("Tide snapshot updated (" + String(minsSinceSnapshot) + " min elapsed)");
     }
   }
 
-  drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection);
+  drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection, currentHasTideFile);
 
   uint32_t start = millis();
   while (millis() - start < REFRESH_INTERVAL_MS) {
@@ -265,6 +264,9 @@ void loop() {
         cachedLocation = LocationInfo();
         locationRetryCount = 0;
         surfRetryCount = 0;
+        // Reset tide state so it is cleanly re-seeded for the new location
+        currentHasTideFile = false;
+        currentTideDirection = 0;
         break;
       } else if (touchResult == 2) {
         // Theme or Wave or Tide button: redraw settings screen
@@ -272,7 +274,7 @@ void loop() {
       } else if (touchResult == 4) {
         // Back button: exit settings
         inSettingsMode = false;
-        drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection);
+        drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection, currentHasTideFile);
       } else if (touchResult == 5) {
         // View files button: show files screen (handles its own input now)
         viewFilesScreen(backButton);
@@ -298,7 +300,7 @@ void loop() {
         runSurfGame(exitButton);
         // Game ended, return to main screen
         inGameMode = false;
-        drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection);
+        drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection, currentHasTideFile);
       }
     }
     delay(50);

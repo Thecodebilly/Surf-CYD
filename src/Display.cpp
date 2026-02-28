@@ -247,7 +247,7 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
 
 void drawForecast(const LocationInfo &location, const SurfForecast &forecast, 
                   Rect &settingsButton, Rect &badSurfGraphicRect,
-                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection) {
+                  float waveHeightThreshold, float minTide, float maxTide, int tideDirection, bool hasTideFile) {
   Serial.printf("[DISPLAY] drawForecast: tideH=%.3fm (%.2fft), min=%.3fm (%.2fft), max=%.3fm (%.2fft), dir=%d\n",
     forecast.tideHeight, forecast.tideHeight * 3.28084f,
     minTide, minTide * 3.28084f,
@@ -346,62 +346,94 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   float minTideFeet    = minTide * 3.28084f;
   float maxTideFeet    = maxTide * 3.28084f;
 
+  // Check if tide data is unavailable (all zero)
+  bool tideUnavailable = (forecast.tideHeight == 0.0f && minTide == 0.0f && maxTide == 0.0f);
+
   // Normalise current position within today's low→high range (0=low, 1=high)
   float tideRange = maxTide - minTide;
   float tideNormalized = 0.0f;
-  if (tideRange > 0.01f) {
+  if (!tideUnavailable && tideRange > 0.01f) {
     tideNormalized = (forecast.tideHeight - minTide) / tideRange;
     tideNormalized = max(0.0f, min(1.0f, tideNormalized));
   }
 
-  // Outline + fill
+  // Outline + fill — cloudColor is pre-inverted by applyTheme() → renders as
+  // light sky blue (RGB ~74,190,255) in dark mode, dark blue in light mode
   uint16_t tideOutlineColor = currentTheme.text;
-  uint16_t tideFillColor    = currentTheme.periodDirTextColor;
+  uint16_t tideFillColor    = currentTheme.cloudColor;
   gfx->drawRect(tideX, tideBarY, tideBarW, tideBarH, tideOutlineColor);
-  int16_t fillHeight = (int16_t)(tideNormalized * (tideBarH - 4));
-  if (fillHeight > 0) {
-    gfx->fillRect(tideX + 2, tideBarY + tideBarH - 2 - fillHeight, tideBarW - 4, fillHeight, tideFillColor);
+  if (!tideUnavailable) {
+    int16_t fillHeight = (int16_t)(tideNormalized * (tideBarH - 4));
+    if (fillHeight > 0) {
+      gfx->fillRect(tideX + 2, tideBarY + tideBarH - 2 - fillHeight, tideBarW - 4, fillHeight, tideFillColor);
+    }
   }
 
-  // "TIDE" text vertically centered in bar
+  // "TIDE" text vertically centered in bar, centered horizontally as a 4-char block
   gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(1);
   const char *tideText    = "TIDE";
   const int16_t charSpacing = 10;
-  const int16_t charWidth   = 6;
+  const int16_t charWidth   = 6;   // pixels wide per char at textSize 1
   const int16_t textHeight  = 4 * charSpacing;
   int16_t tideTextStartY  = tideBarY + (tideBarH - textHeight) / 2;
-  int16_t tideTextX       = tideX + (tideBarW - charWidth) / 2;
+  // Center the single-char column exactly in the bar
+  int16_t tideTextX       = tideX + (tideBarW / 2) - (charWidth / 2);
   for (int i = 0; i < 4; i++) {
     gfx->setCursor(tideTextX, tideTextStartY + i * charSpacing);
     gfx->print(tideText[i]);
   }
 
-  // Direction arrow inside bar
-  int16_t arrowCX  = tideX + tideBarW / 2;
-  int16_t arrowSz  = 3;
-  uint16_t arrowCol = currentTheme.text;
-  if (tideDirection > 0) {
-    int16_t ay = tideTextStartY - 10;
-    gfx->fillTriangle(arrowCX, ay - arrowSz, arrowCX - arrowSz, ay + arrowSz, arrowCX + arrowSz, ay + arrowSz, arrowCol);
-  } else if (tideDirection < 0) {
-    int16_t ay = tideTextStartY + textHeight + 10;
-    gfx->fillTriangle(arrowCX, ay + arrowSz, arrowCX - arrowSz, ay - arrowSz, arrowCX + arrowSz, ay - arrowSz, arrowCol);
+  if (tideUnavailable) {
+    // Show "N/A" below bar and skip H/L labels
+    gfx->setTextColor(currentTheme.textSecondary);
+    gfx->setTextSize(1);
+    gfx->setCursor(tideX - 11, tideBarY + tideBarH + 4);
+    gfx->print("Tide info");
+    gfx->setCursor(tideX - 14, tideBarY + tideBarH + 14);
+    gfx->print("not avail.");
+  } else {
+    // Direction arrow — only drawn if the tide snapshot file exists.
+    // Black in dark mode, white in light mode (WHITE/BLACK constants are stored
+    // pre-inverted for hardware, so they render correctly on screen).
+    if (hasTideFile) {
+      int16_t arrowCX = tideX + (tideBarW / 2);
+      int16_t arrowSz = 5;
+      uint16_t arrowCol = darkMode ? BLACK : WHITE;
+      const int16_t gap = 3;
+      const int16_t upShift = 4; // move arrows 4px further from text
+      if (tideDirection > 0) {
+        // Up arrow — shifted 4px higher than before
+        int16_t baseY = tideTextStartY - gap - upShift;
+        int16_t tipY  = baseY - arrowSz;
+        gfx->fillTriangle(arrowCX,           tipY,
+                          arrowCX - arrowSz, baseY,
+                          arrowCX + arrowSz, baseY, arrowCol);
+      } else if (tideDirection < 0) {
+        // Down arrow — shifted 4px lower than before
+        int16_t baseY = tideTextStartY + textHeight + gap + upShift;
+        int16_t tipY  = baseY + arrowSz;
+        gfx->fillTriangle(arrowCX,           tipY,
+                          arrowCX - arrowSz, baseY,
+                          arrowCX + arrowSz, baseY, arrowCol);
+      }
+      // Slack (direction == 0): no arrow drawn
+    }
+
+    // Current tide in ft — below bar
+    gfx->setTextColor(currentTheme.periodDirNumberColor);
+    gfx->setTextSize(2);
+    gfx->setCursor(tideX - 5, tideBarY + tideBarH + 4);
+    gfx->print(String(tideHeightFeet, 1) + "ft");
+
+    // H / L tiny labels above and below bar
+    gfx->setTextColor(currentTheme.textSecondary);
+    gfx->setTextSize(1);
+    gfx->setCursor(tideX + 2, tideBarY - 8);
+    gfx->print("H " + String(maxTideFeet, 1) + "ft");
+    gfx->setCursor(tideX + 2, tideBarY + tideBarH + 20);
+    gfx->print("L " + String(minTideFeet, 1) + "ft");
   }
-
-  // Current tide in ft — below bar
-  gfx->setTextColor(currentTheme.periodDirNumberColor);
-  gfx->setTextSize(2);
-  gfx->setCursor(tideX - 5, tideBarY + tideBarH + 4);
-  gfx->print(String(tideHeightFeet, 1) + "ft");
-
-  // H / L tiny labels above and below bar
-  gfx->setTextColor(currentTheme.textSecondary);
-  gfx->setTextSize(1);
-  gfx->setCursor(tideX + 2, tideBarY - 8);
-  gfx->print("H " + String(maxTideFeet, 1) + "ft");
-  gfx->setCursor(tideX + 2, tideBarY + tideBarH + 20);
-  gfx->print("L " + String(minTideFeet, 1) + "ft");
 
   drawSettingsButton(settingsButton);
 }
