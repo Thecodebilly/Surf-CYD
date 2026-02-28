@@ -348,6 +348,9 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
 
   // Check if tide data is unavailable (all zero)
   bool tideUnavailable = (forecast.tideHeight == 0.0f && minTide == 0.0f && maxTide == 0.0f);
+  if (tideUnavailable) {
+    Serial.println("[DISPLAY] Tide data unavailable: tideHeight, minTide, and maxTide are all 0");
+  }
 
   // Normalise current position within today's low→high range (0=low, 1=high)
   float tideRange = maxTide - minTide;
