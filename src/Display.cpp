@@ -56,41 +56,41 @@ void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color) {
 
   // Rising sun (~0xFFE0 = 0x001F, blue in RGB565 after inversion)
   uint16_t sunColor = 0x001F;
-  gfx->fillCircle(x + 20, y - 34, 16, sunColor);
+  gfx->fillCircle(x + 22, y - 37, 18, sunColor);
   for (int i = 0; i < 7; i++) {
     float angle = (-0.25f + i * 0.25f) * PI;
-    int16_t x1 = x + 20 + cos(angle) * 20;
-    int16_t y1 = y - 34 + sin(angle) * 20;
-    int16_t x2 = x + 20 + cos(angle) * 30;
-    int16_t y2 = y - 34 + sin(angle) * 30;
+    int16_t x1 = x + 22 + cos(angle) * 22;
+    int16_t y1 = y - 37 + sin(angle) * 22;
+    int16_t x2 = x + 22 + cos(angle) * 33;
+    int16_t y2 = y - 37 + sin(angle) * 33;
     gfx->drawLine(x1, y1, x2, y2, sunColor);
   }
-  gfx->drawLine(x + 20, y - 54, x + 20, y - 64, sunColor);
+  gfx->drawLine(x + 22, y - 59, x + 22, y - 70, sunColor);
 
   // Clean wave face and lip
-  gfx->fillCircle(x - 10, y + 10, 42, seaColor);
-  gfx->fillCircle(x + 8, y + 12, 34, currentTheme.background);
-  gfx->drawCircle(x - 10, y + 10, 42, foamColor);
-  gfx->drawCircle(x - 11, y + 10, 42, foamColor);
+  gfx->fillCircle(x - 11, y + 11, 46, seaColor);
+  gfx->fillCircle(x + 9, y + 13, 37, currentTheme.background);
+  gfx->drawCircle(x - 11, y + 11, 46, foamColor);
+  gfx->drawCircle(x - 12, y + 11, 46, foamColor);
 
   // Foam streaks
-  gfx->drawLine(x - 34, y + 25, x - 3, y + 8, foamColor);
-  gfx->drawLine(x - 30, y + 30, x - 1, y + 16, foamColor);
-  gfx->drawLine(x - 22, y + 34, x + 2, y + 22, foamColor);
+  gfx->drawLine(x - 37, y + 28, x - 3, y + 9, foamColor);
+  gfx->drawLine(x - 33, y + 33, x - 1, y + 18, foamColor);
+  gfx->drawLine(x - 24, y + 37, x + 2, y + 24, foamColor);
 
   // Surfer + board
-  gfx->fillCircle(x + 4, y - 6, 4, surferColor);
-  gfx->drawLine(x + 4, y - 2, x + 1, y + 10, surferColor);
-  gfx->drawLine(x + 1, y + 10, x + 10, y + 15, surferColor);
-  gfx->drawLine(x + 2, y + 4, x + 12, y + 1, surferColor);
-  gfx->drawLine(x - 6, y + 15, x + 18, y + 10, surferColor);
-  gfx->drawLine(x - 5, y + 16, x + 19, y + 11, surferColor);
+  gfx->fillCircle(x + 4, y - 7, 4, surferColor);
+  gfx->drawLine(x + 4, y - 2, x + 1, y + 11, surferColor);
+  gfx->drawLine(x + 1, y + 11, x + 11, y + 17, surferColor);
+  gfx->drawLine(x + 2, y + 4, x + 13, y + 1, surferColor);
+  gfx->drawLine(x - 7, y + 17, x + 20, y + 11, surferColor);
+  gfx->drawLine(x - 6, y + 18, x + 21, y + 12, surferColor);
 
   // Birds in distance
-  gfx->drawLine(x - 40, y - 42, x - 34, y - 46, foamColor);
-  gfx->drawLine(x - 34, y - 46, x - 28, y - 42, foamColor);
-  gfx->drawLine(x - 22, y - 38, x - 16, y - 42, foamColor);
-  gfx->drawLine(x - 16, y - 42, x - 10, y - 38, foamColor);
+  gfx->drawLine(x - 44, y - 46, x - 37, y - 51, foamColor);
+  gfx->drawLine(x - 37, y - 51, x - 31, y - 46, foamColor);
+  gfx->drawLine(x - 24, y - 42, x - 18, y - 46, foamColor);
+  gfx->drawLine(x - 18, y - 46, x - 11, y - 42, foamColor);
 }
 
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
@@ -101,26 +101,28 @@ void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color) {
   uint16_t noSurfColor = 0x07FF;  // cyan (opposite of red)
   uint16_t finColor = currentTheme.text;
 
-  // Surfboard silhouette (pointed nose + rounded tail) - scaled 44% larger than original
-  gfx->fillCircle(x, y - 20, 14, boardColor);
-  gfx->fillRect(x - 14, y - 20, 29, 49, boardColor);
-  gfx->fillCircle(x, y + 29, 14, boardColor);
+  // Prohibition ring: draw as filled outer disc then punch out interior with
+  // background so the ring is perfectly solid (no diagonal gaps from drawCircle).
+  int16_t ringRadius = 56;
+  gfx->fillCircle(x, y + 8, ringRadius + 1, noSurfColor);
+  gfx->fillCircle(x, y + 8, ringRadius - 3, currentTheme.background);
 
-  // Twin fins (skinny triangles) to make the board shape clearer.
-  gfx->fillTriangle(x - 11, y + 32, x - 7, y + 32, x - 9, y + 45, finColor);
-  gfx->fillTriangle(x + 7, y + 32, x + 11, y + 32, x + 9, y + 45, finColor);
+  // Surfboard silhouette drawn on top of the (now hollow) ring interior.
+  gfx->fillCircle(x, y - 24, 17, boardColor);
+  gfx->fillRect(x - 17, y - 24, 35, 59, boardColor);
+  gfx->fillCircle(x, y + 35, 17, boardColor);
 
-  // Board stringer for readability against brighter themes.
-  gfx->drawLine(x, y - 31, x, y + 40, color);
+  // Twin fins
+  gfx->fillTriangle(x - 13, y + 38, x - 8, y + 38, x - 11, y + 54, finColor);
+  gfx->fillTriangle(x + 8, y + 38, x + 13, y + 38, x + 11, y + 54, finColor);
 
-  // Prohibition marker (circle + slash) over the board.
-  int16_t ringRadius = 47;
-  gfx->drawCircle(x, y + 7, ringRadius, noSurfColor);
-  gfx->drawCircle(x, y + 7, ringRadius - 1, noSurfColor);
-  gfx->drawCircle(x, y + 7, ringRadius - 2, noSurfColor);
-  gfx->drawLine(x - 32, y + 39, x + 32, y - 24, noSurfColor);
-  gfx->drawLine(x - 31, y + 39, x + 33, y - 24, noSurfColor);
-  gfx->drawLine(x - 30, y + 39, x + 34, y - 24, noSurfColor);
+  // Board stringer
+  gfx->drawLine(x, y - 37, x, y + 48, color);
+
+  // Diagonal slash — drawn as filled trapezoid (two triangles) for solid look
+  // Corners of an ~8px-wide band along the slash direction
+  gfx->fillTriangle(x - 41, y + 44,  x - 35, y + 50,  x + 45, y - 26, noSurfColor);
+  gfx->fillTriangle(x - 41, y + 44,  x + 45, y - 26,  x + 39, y - 32, noSurfColor);
 }
 
 
@@ -295,7 +297,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
 
   // Right side condition graphic moved up to leave room for arrows
   if (happy) {
-    drawGoodSurfGraphic(w - 78, 130, currentTheme.accent);
+    drawGoodSurfGraphic(w - 113, 130, currentTheme.accent);
     badSurfGraphicRect = {0, 0, 0, 0}; // No bad surf graphic
   } else {
     int16_t badSurfX = w - 133;
