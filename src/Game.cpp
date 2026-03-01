@@ -572,8 +572,8 @@ void runSurfGame(Rect &exitButton) {
   gfx->setCursor(screenWidth / 2 - 90, screenHeight / 2 + 140);
   gfx->println("Touch to continue");
   
-  // Mandatory 1.5-second wait before accepting touch
-  delay(1500);
+  // Mandatory 0.5-second wait before accepting touch
+  delay(500);
   while (touch.touched()) delay(20); // Drain any touches during wait
 
   // Wait for touch to exit
