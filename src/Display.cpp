@@ -283,13 +283,13 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
 
   gfx->setTextColor(currentTheme.accent);
   gfx->setTextSize(3);
-  gfx->setCursor(10, 86);
+  gfx->setCursor(20, 86);
   gfx->println("Wave height");
 
   float waveHeightFeet = forecast.waveHeight * 3.28084f;
   gfx->setTextColor(currentTheme.text);
   gfx->setTextSize(7);
-  gfx->setCursor(10, 118);
+  gfx->setCursor(20, 118);
   gfx->println(String(waveHeightFeet, 1) + " ft");
 
   bool happy = waveHeightFeet >= waveHeightThreshold;
@@ -331,15 +331,33 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
 
   // Bottom row: direction arrows
   const int16_t arrowY = 292;
-  const int16_t swellCenterX = 90;
+  const int16_t swellCenterX = 70;
   const int16_t windCenterX = windLabelX + 65;  // 249
 
   drawDirectionArrow(swellCenterX, arrowY, 42, forecast.waveDirection + 180.0f, YELLOW);
   uint16_t windArrowColor = darkMode ? BLACK : WHITE;
   drawDirectionArrow(windCenterX, arrowY, 42, forecast.windDirection + 180.0f, windArrowColor);
 
+  // Cardinal direction labels below each arrow
+  auto degreesToCardinal = [](float deg) -> const char* {
+    while (deg < 0.0f) deg += 360.0f;
+    while (deg >= 360.0f) deg -= 360.0f;
+    int idx = (int)((deg + 22.5f) / 45.0f) % 8;
+    const char* dirs[] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+    return dirs[idx];
+  };
+  const char* swellCardinal = degreesToCardinal(forecast.waveDirection);
+  const char* windCardinal  = degreesToCardinal(forecast.windDirection);
+  gfx->setTextSize(1);
+  gfx->setTextColor(YELLOW);
+  gfx->setCursor(swellCenterX - 34 - (int16_t)(strlen(swellCardinal) * 6), arrowY - 11);
+  gfx->print(swellCardinal);
+  gfx->setTextColor(windArrowColor);
+  gfx->setCursor(windCenterX - 34 - (int16_t)(strlen(windCardinal) * 6), arrowY - 11);
+  gfx->print(windCardinal);
+
   // Tide bar (vertical)
-  const int16_t tideX    = 420;
+  const int16_t tideX    = 415;
   const int16_t tideBarY = 185;
   const int16_t tideBarW = 45;
   const int16_t tideBarH = 96;
@@ -428,7 +446,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
     // Current tide in ft — below bar
     gfx->setTextColor(currentTheme.periodDirNumberColor);
     gfx->setTextSize(2);
-    gfx->setCursor(tideX - 5, tideBarY + tideBarH + 4);
+    gfx->setCursor(tideX - 15, tideBarY + tideBarH + 4);
     gfx->print(String(tideHeightFeet, 1) + "ft");
 
     // H / L tiny labels above and below bar

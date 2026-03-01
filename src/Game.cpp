@@ -582,8 +582,8 @@ void runSurfGame(Rect &exitButton) {
   }
   while (touch.touched()) delay(20); // Debounce
   
-  // If new global high score, submit with stored player name
-  if (newGlobalHighScore) {
+  // Submit every score to the leaderboard
+  if (score > 0) {
     // Load the player name saved during setup
     String playerName = loadPlayerName();
     if (playerName.isEmpty()) playerName = "Player";

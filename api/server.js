@@ -109,6 +109,40 @@ app.get('/highscore', requireApiKey, async (req, res) => {
   }
 });
 
+// GET /records — returns all records as an array ordered by score DESC (used by ESP32 client)
+app.get('/records', requireApiKey, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT name, score, created_at FROM records ORDER BY score DESC LIMIT 100'
+    );
+    res.json(result.rows.map(row => ({ name: row.name, score: row.score, created_at: row.created_at })));
+  } catch (err) {
+    console.error('Error fetching records:', err);
+    res.status(500).json({ error: 'Failed to fetch records' });
+  }
+});
+
+// POST /records — always inserts every score (used by ESP32 client)
+app.post('/records', requireApiKey, async (req, res) => {
+  const { name, score } = req.body;
+
+  if (!name || score === undefined || score === null) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    await pool.query(
+      'INSERT INTO records (name, score) VALUES ($1, $2)',
+      [name.substring(0, 20), score]
+    );
+    console.log(`Score submitted: ${name} - ${score}`);
+    res.status(201).json({ success: true, name, score });
+  } catch (err) {
+    console.error('Error submitting record:', err);
+    res.status(500).json({ error: 'Failed to submit record' });
+  }
+});
+
 // Submit new high score
 app.post('/highscore', requireApiKey, async (req, res) => {
   const { playerName, score, timestamp } = req.body;
