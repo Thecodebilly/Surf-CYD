@@ -210,44 +210,42 @@ void loop() {
   // Successfully fetched surf, reset retry count
   surfRetryCount = 0;
 
-  // Tide direction: compare current height to stored snapshot, update snapshot every 30 min
+  // Tide direction: always compare the latest hourly reading to the current reading
+  // so an up/down arrow is always available when tide data is available.
   time_t currentTime = time(nullptr);
-  currentHasTideFile = SPIFFS.exists(TIDE_DIRECTION_FILE);
+  currentHasTideFile = SPIFFS.exists(TIDE_HOURLY_FILE);
 
-  if (!currentHasTideFile) {
-    // No snapshot yet — backdate the timestamp by one refresh interval so the
-    // very next cycle has a 30-min comparison window and can show an arrow.
-    time_t backdatedTime = currentTime - (REFRESH_INTERVAL_MS / 1000);
-    saveTideDirection(forecast.tideHeight, backdatedTime, 0);
-    currentTideDirection = 0;
-    currentHasTideFile = true;  // file now exists; arrow will evaluate next cycle
-    logInfo("Tide snapshot seeded (backdated " + String(REFRESH_INTERVAL_MS / 60000) + " min)");
+  float hourlyStartHeight = 0.0f;
+  int hourlyStartHour = -1;
+  time_t ignoredHourlyStartTime = 0;
+  bool hasHourlyReading = loadTideHourlyCheck(hourlyStartHeight, ignoredHourlyStartTime, hourlyStartHour);
+
+  struct tm *nowTm = localtime(&currentTime);
+  int currentHour = nowTm ? nowTm->tm_hour : -1;
+
+  if (!hasHourlyReading || hourlyStartHour < 0 || currentHour < 0) {
+    // Seed from current reading and default to rising arrow so it always renders.
+    saveTideHourlyCheck(forecast.tideHeight, currentTime, currentHour);
+    currentTideDirection = 1;
+    currentHasTideFile = true;
+    logInfo("Seeded hourly tide reading; defaulting arrow to rising for first sample.");
   } else {
-    float storedHeight = 0.0f;
-    time_t storedTimestamp = 0;
-    int storedDir = 0;
-    loadTideDirection(storedHeight, storedTimestamp, storedDir);
+    float heightChange = forecast.tideHeight - hourlyStartHeight;
+    currentTideDirection = (heightChange >= 0.0f) ? 1 : -1;
+    logInfo("Tide direction from hourly reading: " +
+            String(hourlyStartHeight, 3) + "m -> " +
+            String(forecast.tideHeight, 3) + "m (delta " +
+            String(heightChange, 3) + "m)");
 
-    // Determine direction from change since last snapshot
-    float heightChange = forecast.tideHeight - storedHeight;
-    if (heightChange > 0.01f) {
-      currentTideDirection = 1;   // Rising
-      logInfo("Tide rising: +" + String(heightChange, 3) + "m since snapshot");
-    } else if (heightChange < -0.01f) {
-      currentTideDirection = -1;  // Falling
-      logInfo("Tide falling: " + String(heightChange, 3) + "m since snapshot");
-    } else {
-      currentTideDirection = 0;   // Slack
-      logInfo("Slack tide: " + String(heightChange, 3) + "m since snapshot");
-    }
-
-    // Update snapshot every 30 minutes
-    int minsSinceSnapshot = (int)((currentTime - storedTimestamp) / 60);
-    if (minsSinceSnapshot >= 30) {
-      saveTideDirection(forecast.tideHeight, currentTime, currentTideDirection);
-      logInfo("Tide snapshot updated (" + String(minsSinceSnapshot) + " min elapsed)");
+    // Start a new hourly baseline when the hour rolls over.
+    if (currentHour != hourlyStartHour) {
+      saveTideHourlyCheck(forecast.tideHeight, currentTime, currentHour);
+      logInfo("Updated tide hourly baseline for hour " + String(currentHour));
     }
   }
+
+  // Keep compatibility file updated for diagnostics/screens that inspect it.
+  saveTideDirection(forecast.tideHeight, currentTime, currentTideDirection);
 
   drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection, currentHasTideFile);
 
