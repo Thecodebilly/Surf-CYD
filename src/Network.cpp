@@ -18,10 +18,28 @@ static String cachedStationId = "";
 static float cachedStationLat = 0.0f;
 static float cachedStationLon = 0.0f;
 
+// File-scope NOAA NWS wind grid URL cache (cleared alongside tide station cache)
+static String cachedNoaaGridUrl = "";
+static float cachedNoaaWindLat = 0.0f;
+static float cachedNoaaWindLon = 0.0f;
+
+// Blend candidates: up to 3 nearest unique tide stations for the current location,
+// populated by findNearestTideStation and used for inverse-square-distance weighting.
+struct TideCandidate {
+  char  id[10];
+  float distKm;
+};
+static TideCandidate cachedCandidates[3];
+static int           cachedCandidateCount = 0;
+
 void clearTideStationCache() {
   cachedStationId = "";
   cachedStationLat = 0.0f;
   cachedStationLon = 0.0f;
+  cachedNoaaGridUrl = "";
+  cachedNoaaWindLat = 0.0f;
+  cachedNoaaWindLon = 0.0f;
+  cachedCandidateCount = 0;
   Serial.println("[TIDE] Station cache cleared");
 }
 
@@ -474,26 +492,54 @@ String findNearestTideStation(float latitude, float longitude) {
     return R * 2.0f * atan2f(sqrtf(a), sqrtf(1.0f - a));
   };
 
-  int    bestIdx  = -1;
-  float  bestDist = 1e9f;
-  for (int i = 0; i < stationCount; i++) {
-    float d = haversineKm(latitude, longitude, stations[i].lat, stations[i].lon);
-    if (d < bestDist) {
-      bestDist = d;
-      bestIdx  = i;
+  // Find up to 3 nearest stations with unique IDs for blending.
+  // Three sequential passes: each pass picks the nearest unselected unique ID.
+  // Secondary stations must be within BLEND_MAX_DIST_RATIO × the nearest station's distance.
+  const int   MAX_BLEND_STATIONS   = 3;
+  const float BLEND_MAX_DIST_RATIO = 3.0f;
+
+  cachedCandidateCount = 0;
+  for (int pass = 0; pass < MAX_BLEND_STATIONS; pass++) {
+    const char *bestId   = nullptr;
+    float       bestDist = 1e9f;
+
+    for (int i = 0; i < stationCount; i++) {
+      float d = haversineKm(latitude, longitude, stations[i].lat, stations[i].lon);
+      if (d > MAX_STATION_DISTANCE_KM) continue;
+
+      // Skip station IDs already selected in a previous pass
+      bool already = false;
+      for (int j = 0; j < cachedCandidateCount; j++) {
+        if (strcmp(cachedCandidates[j].id, stations[i].id) == 0) { already = true; break; }
+      }
+      if (already) continue;
+
+      if (d < bestDist) { bestDist = d; bestId = stations[i].id; }
     }
+
+    if (!bestId) break;
+
+    // Secondary candidates must be within BLEND_MAX_DIST_RATIO × nearest distance
+    if (pass > 0 && bestDist > cachedCandidates[0].distKm * BLEND_MAX_DIST_RATIO) break;
+
+    strncpy(cachedCandidates[cachedCandidateCount].id, bestId, 9);
+    cachedCandidates[cachedCandidateCount].id[9]  = '\0';
+    cachedCandidates[cachedCandidateCount].distKm = bestDist;
+    cachedCandidateCount++;
   }
 
-  if (bestIdx >= 0 && bestDist <= MAX_STATION_DISTANCE_KM) {
-    logInfo("Nearest NOAA station: " + String(stations[bestIdx].name) +
-            " (" + String(stations[bestIdx].id) + ") — " +
-            String(bestDist, 1) + " km away");
-    return String(stations[bestIdx].id);
+  if (cachedCandidateCount == 0) {
+    logError("No NOAA station within " + String(MAX_STATION_DISTANCE_KM, 0) +
+             " km. Tide data unavailable for this region.");
+    return "";
   }
 
-  logError("No NOAA station within " + String(MAX_STATION_DISTANCE_KM, 0) +
-           " km (nearest was " + String(bestDist, 1) + " km). Tide data unavailable for this region.");
-  return "";
+  logInfo("Nearest NOAA station: " + String(cachedCandidates[0].id) +
+          " — " + String(cachedCandidates[0].distKm, 1) + " km away" +
+          (cachedCandidateCount > 1
+            ? " (+" + String(cachedCandidateCount - 1) + " blend candidate(s))"
+            : ""));
+  return String(cachedCandidates[0].id);
 }
 
 // Fetch current tide height from NOAA station
@@ -511,7 +557,7 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     logError("fetchNOAATideHeight: NTP time not synced (time=" + String(now) + "), retrying...");
     // Try syncing again
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 100; i++) {
       delay(100);
       now = time(nullptr);
       if (now >= 1000000000) {
@@ -519,7 +565,6 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
         break;
       }
     }
-    
     // If still not synced, fail
     if (now < 1000000000) {
       logError("fetchNOAATideHeight: NTP sync failed even after retry (time=" + String(now) + ")");
@@ -698,13 +743,129 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
   }
 }
 
+// Lightweight tide height fetch for secondary blend stations.
+// Assumes NTP is already synced (the primary station call ensures this).
+// Does NOT touch the min/max bounds cache — only returns the current-hour prediction.
+// Returns current height in metres, or -9999.0f on any failure.
+static float fetchTideHeightOnly(const String &stationId, const struct tm *ti) {
+  if (WiFi.status() != WL_CONNECTED || stationId.isEmpty()) return -9999.0f;
+
+  char dateStr[16];
+  strftime(dateStr, sizeof(dateStr), "%Y%m%d", ti);
+
+  HTTPClient http;
+  String url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&station=" + stationId +
+               "&datum=MLLW&time_zone=gmt&units=english&interval=h&begin_date=" + String(dateStr) +
+               "&end_date=" + String(dateStr) + "&format=json";
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.begin(url);
+  int code = http.GET();
+  if (code != HTTP_CODE_OK) { http.end(); return -9999.0f; }
+
+  String payload = http.getString();
+  http.end();
+
+  DynamicJsonDocument doc(8 * 1024);
+  if (deserializeJson(doc, payload)) return -9999.0f;
+
+  JsonArray predictions = doc["predictions"];
+  if (predictions.isNull() || predictions.size() == 0) return -9999.0f;
+
+  int currentHour = ti->tm_hour;
+  String valStr = predictions[0]["v"] | "0.0";
+  for (JsonVariant pred : predictions) {
+    String timeStr = pred["t"] | "";
+    int predHour = timeStr.length() >= 13 ? timeStr.substring(11, 13).toInt() : -1;
+    if (predHour == currentHour) { valStr = pred["v"] | "0.0"; break; }
+  }
+  return valStr.toFloat() * 0.3048f; // feet → metres
+}
+
+// Returns true if the given coordinates have at least one data source:
+// 1) A NOAA tide station within 400 km (US coverage, instant local check), OR
+// 2) Non-null marine wave data from the open-meteo API (global coastal coverage).
+// Used to filter location search results so only surf-capable locations are shown.
+bool locationHasData(float lat, float lon) {
+  // Fast path: local NOAA station lookup (no network needed)
+  String stationId = findNearestTideStation(lat, lon);
+  if (!stationId.isEmpty()) {
+    logInfo("locationHasData: NOAA station " + stationId + " found for (" + String(lat, 4) + "," + String(lon, 4) + ")");
+    return true;
+  }
+
+  // Slow path: probe marine API for wave data (catches non-US coastal locations)
+  if (WiFi.status() != WL_CONNECTED) return false;
+  HTTPClient http;
+  String url = String(MARINE_URL) + "?latitude=" + String(lat, 4) +
+               "&longitude=" + String(lon, 4) +
+               "&hourly=wave_height&forecast_days=1";
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setTimeout(6000);
+  http.begin(url);
+  int code = http.GET();
+  if (code != HTTP_CODE_OK) { http.end(); return false; }
+  String payload = http.getString();
+  http.end();
+
+  DynamicJsonDocument doc(4 * 1024);
+  if (deserializeJson(doc, payload)) return false;
+
+  JsonArray heights = doc["hourly"]["wave_height"];
+  if (heights.isNull() || heights.size() == 0) return false;
+
+  for (JsonVariant h : heights) {
+    if (!h.isNull()) {
+      logInfo("locationHasData: marine wave data found for (" + String(lat, 4) + "," + String(lon, 4) + ")");
+      return true;
+    }
+  }
+
+  logInfo("locationHasData: no data for (" + String(lat, 4) + "," + String(lon, 4) + ") — inland/landlocked");
+  return false;
+}
+
+static float cardinalToDegrees(const String &cardinal) {
+  if (cardinal == "N")   return 0.0f;
+  if (cardinal == "NNE") return 22.5f;
+  if (cardinal == "NE")  return 45.0f;
+  if (cardinal == "ENE") return 67.5f;
+  if (cardinal == "E")   return 90.0f;
+  if (cardinal == "ESE") return 112.5f;
+  if (cardinal == "SE")  return 135.0f;
+  if (cardinal == "SSE") return 157.5f;
+  if (cardinal == "S")   return 180.0f;
+  if (cardinal == "SSW") return 202.5f;
+  if (cardinal == "SW")  return 225.0f;
+  if (cardinal == "WSW") return 247.5f;
+  if (cardinal == "W")   return 270.0f;
+  if (cardinal == "WNW") return 292.5f;
+  if (cardinal == "NW")  return 315.0f;
+  if (cardinal == "NNW") return 337.5f;
+  return 0.0f;
+}
+
+// Parses NOAA wind speed strings such as "10 mph" or "5 to 10 mph"
+static float parseNOAAWindSpeed(const String &speedStr) {
+  int toIdx = speedStr.indexOf(" to ");
+  if (toIdx >= 0) {
+    float low  = speedStr.substring(0, toIdx).toFloat();
+    int mphIdx = speedStr.indexOf(" mph", toIdx + 4);
+    float high = speedStr.substring(toIdx + 4, mphIdx >= 0 ? mphIdx : (int)speedStr.length()).toFloat();
+    return (low + high) / 2.0f;
+  }
+  return speedStr.toFloat();
+}
+
 SurfForecast fetchSurfForecast(float latitude, float longitude) {
   SurfForecast forecast;
   if (WiFi.status() != WL_CONNECTED) return forecast;
 
-  // Fetch wave data from Marine API
+  // ── 1. Wave data from Marine API ────────────────────────────────────────
+  // forecast_days=1 limits response to 24 hrs (~5 KB) instead of 7 days,
+  // keeping the heap less fragmented for subsequent HTTPS calls.
   HTTPClient http;
-  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wave_height,wave_period,wave_direction&timezone=auto";
+  String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) +
+               "&hourly=wave_height,wave_period,wave_direction&timezone=auto&forecast_days=1";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(url);
   int code = http.GET();
@@ -713,7 +874,7 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
     return forecast;
   }
 
-  DynamicJsonDocument doc(24 * 1024);
+  DynamicJsonDocument doc(8 * 1024);
   String payload = http.getString();
   http.end();
   if (deserializeJson(doc, payload)) return forecast;
@@ -731,30 +892,12 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   forecast.wavePeriod = periods[0] | 0.0f;
   forecast.waveDirection = directions[0] | 0.0f;
 
-  // Fetch wind data from Weather Forecast API
-  url = String(WEATHER_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) + "&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=mph&timezone=auto";
-  http.begin(url);
-  code = http.GET();
-  if (code == HTTP_CODE_OK) {
-    payload = http.getString();
-    http.end();
-    DynamicJsonDocument windDoc(12 * 1024);
-    if (deserializeJson(windDoc, payload) == DeserializationError::Ok) {
-      JsonArray windSpeeds = windDoc["hourly"]["wind_speed_10m"];
-      JsonArray windDirections = windDoc["hourly"]["wind_direction_10m"];
-      if (!windSpeeds.isNull() && !windDirections.isNull() && windSpeeds.size() > 0) {
-        forecast.windSpeed = windSpeeds[0] | 0.0f;
-        forecast.windDirection = windDirections[0] | 0.0f;
-      }
-    }
-  } else {
-    http.end();
-  }
-  
-  // Fetch tide data from NOAA
-  // Use file-scope cached station ID (can be cleared when location changes)
-  
-  // Check if we need to find a new station (location changed significantly)
+  // Free wave payload before next HTTPS call
+  payload = "";
+  doc.clear();
+
+  // ── 2. Tide data from NOAA (do this BEFORE wind to reduce SSL heap pressure)
+  // The marine API SSL context has been freed; only one prior HTTPS session here.
   if (cachedStationId.isEmpty() || abs(latitude - cachedStationLat) > 0.5f || abs(longitude - cachedStationLon) > 0.5f) {
     logInfo("Finding nearest NOAA tide station for lat=" + String(latitude, 6) + ", lon=" + String(longitude, 6));
     cachedStationId = findNearestTideStation(latitude, longitude);
@@ -763,16 +906,102 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   } else {
     logInfo("Using cached NOAA station: " + cachedStationId + " (lat=" + String(latitude, 6) + ", lon=" + String(longitude, 6) + ")");
   }
-  
-  // Fetch tide height from NOAA
+
   if (!cachedStationId.isEmpty()) {
     forecast.tideHeight = fetchNOAATideHeight(cachedStationId, forecast.minTide, forecast.maxTide);
     Serial.printf("[TIDE] forecast: height=%.3fm, min=%.3fm, max=%.3fm\n", forecast.tideHeight, forecast.minTide, forecast.maxTide);
+
+    if (cachedCandidateCount > 1) {
+      time_t blendNow = time(nullptr);
+      const struct tm *ti = gmtime(&blendNow);
+      const float MIN_DIST_KM = 5.0f;
+      float d0 = cachedCandidates[0].distKm < MIN_DIST_KM ? MIN_DIST_KM : cachedCandidates[0].distKm;
+      float w0 = 1.0f / (d0 * d0);
+      float heightSum = forecast.tideHeight * w0;
+      float weightSum = w0;
+
+      for (int i = 1; i < cachedCandidateCount; i++) {
+        float h = fetchTideHeightOnly(String(cachedCandidates[i].id), ti);
+        if (h > -999.0f) {
+          float di = cachedCandidates[i].distKm < MIN_DIST_KM ? MIN_DIST_KM : cachedCandidates[i].distKm;
+          float wi = 1.0f / (di * di);
+          heightSum += h * wi;
+          weightSum += wi;
+          logInfo("[TIDE] blend[" + String(i) + "] station=" + String(cachedCandidates[i].id) +
+                  " dist=" + String(cachedCandidates[i].distKm, 1) + "km h=" + String(h, 3) + "m");
+        }
+      }
+
+      float blended = heightSum / weightSum;
+      logInfo("[TIDE] Blended height=" + String(blended, 3) + "m from " +
+              String(cachedCandidateCount) + " stations (primary=" + String(forecast.tideHeight, 3) + "m)");
+      forecast.tideHeight = blended;
+    }
   } else {
-    logError("No NOAA tide station found, using default tide height");
+    logError("No NOAA tide station found, tide unavailable");
     forecast.tideHeight = 0.0f;
     forecast.minTide = 0.0f;
     forecast.maxTide = 0.0f;
+  }
+
+  // ── 3. Wind data from NWS (non-hourly forecast — 14 periods, ~20 KB response)
+  // Using the compact /forecast endpoint instead of /forecast/hourly (156 periods, ~80 KB).
+  // Step 3a: Resolve the NWS grid URL for this location (cached per location).
+  if (cachedNoaaGridUrl.isEmpty() || abs(latitude - cachedNoaaWindLat) > 0.5f || abs(longitude - cachedNoaaWindLon) > 0.5f) {
+    String pointUrl = "https://api.weather.gov/points/" + String(latitude, 4) + "," + String(longitude, 4);
+    http.begin(pointUrl);
+    http.addHeader("User-Agent", "(SurfCYD, ESP32)");
+    http.addHeader("Accept", "application/geo+json");
+    code = http.GET();
+    if (code == HTTP_CODE_OK) {
+      payload = http.getString();
+      http.end();
+      DynamicJsonDocument pointDoc(4 * 1024);
+      if (deserializeJson(pointDoc, payload) == DeserializationError::Ok) {
+        // Use compact /forecast (14 periods, ~20 KB) instead of /forecast/hourly (156 periods, ~80 KB)
+        const char *forecastUrl = pointDoc["properties"]["forecast"];
+        if (forecastUrl) {
+          cachedNoaaGridUrl = String(forecastUrl);
+          cachedNoaaWindLat = latitude;
+          cachedNoaaWindLon = longitude;
+          logInfo("NOAA NWS forecast URL cached: " + cachedNoaaGridUrl);
+        }
+      }
+    } else {
+      logError("NOAA NWS points API failed: HTTP " + String(code));
+      http.end();
+    }
+  }
+
+  // Step 3b: Fetch wind from the compact NWS forecast endpoint.
+  if (!cachedNoaaGridUrl.isEmpty()) {
+    http.begin(cachedNoaaGridUrl);
+    http.addHeader("User-Agent", "(SurfCYD, ESP32)");
+    http.addHeader("Accept", "application/geo+json");
+    code = http.GET();
+    if (code == HTTP_CODE_OK) {
+      payload = http.getString();
+      http.end();
+      DynamicJsonDocument windDoc(16 * 1024);
+      if (deserializeJson(windDoc, payload) == DeserializationError::Ok) {
+        JsonArray wperiods = windDoc["properties"]["periods"];
+        if (!wperiods.isNull() && wperiods.size() > 0) {
+          String speedStr = wperiods[0]["windSpeed"]    | "";
+          String dirStr   = wperiods[0]["windDirection"] | "";
+          forecast.windSpeed     = parseNOAAWindSpeed(speedStr);
+          forecast.windDirection = cardinalToDegrees(dirStr);
+          logInfo("NOAA wind: " + speedStr + " from " + dirStr +
+                  " (" + String(forecast.windDirection, 0) + "deg)");
+        } else {
+          logError("NOAA NWS wind: no periods in response");
+        }
+      } else {
+        logError("NOAA NWS wind JSON parse failed");
+      }
+    } else {
+      logError("NOAA NWS forecast failed: HTTP " + String(code));
+      http.end();
+    }
   }
 
   forecast.valid = true;

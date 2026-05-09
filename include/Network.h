@@ -22,4 +22,7 @@ String findNearestTideStation(float latitude, float longitude);
 float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTide);
 void clearTideStationCache();
 
+// Location data availability check (for filtering search results)
+bool locationHasData(float lat, float lon);
+
 #endif // NETWORK_H

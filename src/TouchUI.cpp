@@ -482,16 +482,42 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
           gfx->println("No locations found");
           delay(2000);
           needsRedraw = true;
-        } else if (matches.size() == 1) {
-          location = matches[0].displayName;
-          cachedLocation = matches[0];  // Cache the full location info
-          needsRedraw = true;
         } else {
-          // Show selection list
-          int selectedIndex = selectLocationFromList(matches);
-          if (selectedIndex >= 0 && selectedIndex < (int)matches.size()) {
-            location = matches[selectedIndex].displayName;
-            cachedLocation = matches[selectedIndex];  // Cache the full location info
+          // Filter out locations that have no surf data
+          gfx->setCursor(10, 50);
+          gfx->setTextColor(currentTheme.textSecondary);
+          gfx->println("Checking locations...");
+
+          std::vector<LocationInfo> validMatches;
+          for (size_t i = 0; i < matches.size(); i++) {
+            // Update progress
+            gfx->fillRect(10, 70, gfx->width() - 20, 20, currentTheme.background);
+            gfx->setCursor(10, 70);
+            gfx->setTextColor(currentTheme.textSecondary);
+            gfx->print(String(i + 1) + "/" + String(matches.size()) + ": " + matches[i].displayName.substring(0, 24));
+            if (locationHasData(matches[i].latitude, matches[i].longitude)) {
+              validMatches.push_back(matches[i]);
+            }
+          }
+
+          if (validMatches.empty()) {
+            gfx->fillScreen(currentTheme.background);
+            gfx->setCursor(10, 50);
+            gfx->setTextColor(currentTheme.error);
+            gfx->println("No surf data available");
+            gfx->setCursor(10, 75);
+            gfx->setTextColor(currentTheme.textSecondary);
+            gfx->println("Try a coastal location");
+            delay(2500);
+          } else if (validMatches.size() == 1) {
+            location = validMatches[0].displayName;
+            cachedLocation = validMatches[0];
+          } else {
+            int selectedIndex = selectLocationFromList(validMatches);
+            if (selectedIndex >= 0 && selectedIndex < (int)validMatches.size()) {
+              location = validMatches[selectedIndex].displayName;
+              cachedLocation = validMatches[selectedIndex];
+            }
           }
           needsRedraw = true;
         }

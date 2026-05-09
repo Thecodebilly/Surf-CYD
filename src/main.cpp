@@ -123,9 +123,9 @@ void setup() {
   // Configure NTP time sync
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   logInfo("Waiting for NTP time sync...");
-  // Wait up to 10 seconds for time sync
+  // Wait up to 20 seconds for time sync
   int timeoutCount = 0;
-  while (time(nullptr) < 1000000000 && timeoutCount < 100) {
+  while (time(nullptr) < 1000000000 && timeoutCount < 200) {
     delay(100);
     timeoutCount++;
   }
@@ -183,23 +183,10 @@ void loop() {
   if (!forecast.valid) {
     surfRetryCount++;
     if (surfRetryCount >= 3) {
-      showStatus("Surf fetch failed", "Resetting settings...", currentTheme.error);
-      delay(2000);
-      // Delete all files except wifi
-      deleteSurfLocation();
-      deleteWaveHeightPreference();
-      deleteThemePreference();
-      deleteTideBounds();
-      deleteTideDirection();
-      deleteTideHourlyCheck();
-      currentHasTideFile = false;
-      currentTideDirection = 0;
+      // Surf API is temporarily unavailable — keep all settings intact and retry later
+      showStatus("Surf data unavailable", "Retrying in 5 min...", currentTheme.error);
       surfRetryCount = 0;
-      locationRetryCount = 0;
-      surfLocation = "";
-      cachedLocation = LocationInfo();
-      showStatus("Reset complete", "Restarting setup...", currentTheme.textSecondary);
-      delay(2000);
+      delay(300000); // Wait 5 minutes before trying again
       return;
     }
     showStatus("Fetch failed", String("Retry ") + String(surfRetryCount) + "/3", currentTheme.error);
