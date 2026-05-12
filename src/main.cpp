@@ -183,10 +183,20 @@ void loop() {
   if (!forecast.valid) {
     surfRetryCount++;
     if (surfRetryCount >= 3) {
-      // Surf API is temporarily unavailable — keep all settings intact and retry later
-      showStatus("Surf data unavailable", "Retrying in 5 min...", currentTheme.error);
+      // Surf API is temporarily unavailable — keep all settings intact and retry later.
+      // Wait up to 5 minutes, but allow a screen tap to skip the wait immediately.
+      showStatus("Surf data unavailable", "Tap to retry / wait 5min", currentTheme.error);
       surfRetryCount = 0;
-      delay(300000); // Wait 5 minutes before trying again
+      {
+        uint32_t waitStart = millis();
+        while (millis() - waitStart < 300000UL) {
+          if (touch.touched()) {
+            while (touch.touched()) delay(20);
+            break;
+          }
+          delay(50);
+        }
+      }
       return;
     }
     showStatus("Fetch failed", String("Retry ") + String(surfRetryCount) + "/3", currentTheme.error);
@@ -269,9 +279,6 @@ void loop() {
         showLeaderboard();
         drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton, leaderboardButton);
       }
-    } else if (inGameMode) {
-      // Handle game screen - game is already running, just wait
-      delay(50);
     } else {
       // Handle main screen
       int touchResult = handleMainScreenTouch(settingsButton, badSurfGraphicRect);

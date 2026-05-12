@@ -23,7 +23,7 @@ String runLocationSetupTouch(LocationInfo &cachedLocation);
 float runWaveHeightSetupTouch();
 void runSettingsScreenModal();
 int selectLocationFromList(const std::vector<LocationInfo> &locations);
-int selectDefaultLocation();
+LocationInfo selectDefaultLocation();
 
 // Main screen touch handling
 int handleMainScreenTouch(const Rect &settingsButton, const Rect &badSurfGraphicRect);

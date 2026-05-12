@@ -91,6 +91,7 @@ std::vector<LocationInfo> fetchLocationMatches(const String &location, int maxRe
   String url = String(GEOCODE_URL) + "?name=" + urlEncode(location) + "&count=" + String(maxResults) + "&language=en&format=json";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(url);
+  http.setTimeout(10000);
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
     http.end();
@@ -299,7 +300,7 @@ String findNearestTideStation(float latitude, float longitude) {
     { 33.961f, -118.423f, "9410660", "Los Angeles, CA" },
     { 33.720f, -118.272f, "9410230", "Cabrillo Beach, CA" },
     { 33.456f, -118.489f, "9410079", "Avalon, CA" },
-    { 32.867f, -117.258f, "9410230", "La Jolla, CA" },
+    { 32.867f, -117.258f, "9410170", "La Jolla, CA" },
     { 32.714f, -117.174f, "9410170", "San Diego, CA" },
     // ── ALASKA — SOUTHEAST ───────────────────────────────────────────────────
     { 55.342f, -131.626f, "9450460", "Ketchikan, AK" },
@@ -429,7 +430,7 @@ String findNearestTideStation(float latitude, float longitude) {
     { 34.460f, -120.017f, "9411081", "Gaviota, CA" },
     { 34.007f, -118.498f, "9410580", "Santa Monica, CA" },
     { 33.463f, -117.714f, "9410195", "Dana Point, CA" },
-    { 33.629f, -117.928f, "9410660", "Newport Beach, CA" },
+    { 33.629f, -117.928f, "9410195", "Newport Beach, CA" },
     { 33.159f, -117.389f, "9410170", "Oceanside, CA" },
     // ── ADDITIONAL ALASKA FILLS ──────────────────────────────────────────────
     { 58.388f, -135.724f, "9452400", "Skagway, AK" },
@@ -551,31 +552,22 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     return 0.0f;
   }
   
-  // Check if NTP time sync has completed, retry if not
   time_t now = time(nullptr);
   if (now < 1000000000) {
-    logError("fetchNOAATideHeight: NTP time not synced (time=" + String(now) + "), retrying...");
-    // Try syncing again
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    for (int i = 0; i < 100; i++) {
-      delay(100);
-      now = time(nullptr);
-      if (now >= 1000000000) {
-        logInfo("NTP sync succeeded on retry: " + String(now));
-        break;
-      }
-    }
-    // If still not synced, fail
-    if (now < 1000000000) {
-      logError("fetchNOAATideHeight: NTP sync failed even after retry (time=" + String(now) + ")");
-      minTide = 0.0f;
-      maxTide = 0.0f;
-      return 0.0f;
-    }
+    logError("fetchNOAATideHeight: NTP not synced, skipping tide fetch (time=" + String(now) + ")");
+    minTide = 0.0f;
+    maxTide = 0.0f;
+    return 0.0f;
   }
   
   // Get current date in YYYYMMDD format
-  struct tm *timeinfo = localtime(&now);
+  struct tm timebuf;  // own copy — avoids pointer invalidation if anything calls localtime/gmtime
+  {
+    struct tm *tmp = localtime(&now);
+    if (tmp) timebuf = *tmp;
+    else { minTide = 0.0f; maxTide = 0.0f; return 0.0f; }
+  }
+  struct tm *timeinfo = &timebuf;
   char dateStr[16];
   strftime(dateStr, sizeof(dateStr), "%Y%m%d", timeinfo);
   String currentDate = String(dateStr);
@@ -601,9 +593,10 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
                  "&datum=MLLW&time_zone=gmt&units=english&interval=h&begin_date=" + currentDate + 
                  "&end_date=" + currentDate + "&format=json";
     Serial.printf("[TIDE] Non-cached URL: %s\n", url.c_str());
-    
+
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.begin(url);
+    http.setTimeout(10000);
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
       logError("Failed to fetch NOAA tide data: HTTP " + String(code) + " for URL: " + url);
@@ -694,13 +687,15 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
                  "&datum=MLLW&time_zone=gmt&units=english&interval=h&begin_date=" + currentDate + 
                  "&end_date=" + currentDate + "&format=json";
     Serial.printf("[TIDE] Cached URL: %s\n", url.c_str());
-    
+
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.begin(url);
+    http.setTimeout(10000);
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
       logError("Failed to fetch current NOAA tide: HTTP " + String(code));
       http.end();
+      // Preserve cached minTide/maxTide — they were loaded above and are still valid
       return 0.0f;
     }
     
@@ -759,6 +754,7 @@ static float fetchTideHeightOnly(const String &stationId, const struct tm *ti) {
                "&end_date=" + String(dateStr) + "&format=json";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(url);
+  http.setTimeout(10000);
   int code = http.GET();
   if (code != HTTP_CODE_OK) { http.end(); return -9999.0f; }
 
@@ -865,9 +861,10 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   // keeping the heap less fragmented for subsequent HTTPS calls.
   HTTPClient http;
   String url = String(MARINE_URL) + "?latitude=" + String(latitude, 4) + "&longitude=" + String(longitude, 4) +
-               "&hourly=wave_height,wave_period,wave_direction&timezone=auto&forecast_days=1";
+               "&hourly=wave_height,wave_period,wave_direction&timezone=UTC&forecast_days=1";
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(url);
+  http.setTimeout(10000);
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
     http.end();
@@ -887,10 +884,24 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
     return forecast;
   }
 
-  forecast.timeLabel = String(times[0].as<const char *>());
-  forecast.waveHeight = heights[0] | 0.0f;
-  forecast.wavePeriod = periods[0] | 0.0f;
-  forecast.waveDirection = directions[0] | 0.0f;
+  // Find the entry for the current UTC hour; fall back to index 0 if NTP not synced or no match
+  time_t waveNow = time(nullptr);
+  const struct tm *utcTm = gmtime(&waveNow);
+  int waveHour = (utcTm && waveNow >= 1000000000) ? utcTm->tm_hour : 0;
+  int bestIdx = 0;
+  for (int i = 0; i < (int)times.size(); i++) {
+    const char *tStr = times[i].as<const char *>();
+    if (!tStr) continue;
+    String t = String(tStr);
+    if (t.length() >= 13 && t.substring(11, 13).toInt() == waveHour) {
+      bestIdx = i;
+      break;
+    }
+  }
+  forecast.timeLabel   = String(times[bestIdx].as<const char *>());
+  forecast.waveHeight  = heights[bestIdx]    | 0.0f;
+  forecast.wavePeriod  = periods[bestIdx]    | 0.0f;
+  forecast.waveDirection = directions[bestIdx] | 0.0f;
 
   // Free wave payload before next HTTPS call
   payload = "";
@@ -937,6 +948,21 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
               String(cachedCandidateCount) + " stations (primary=" + String(forecast.tideHeight, 3) + "m)");
       forecast.tideHeight = blended;
     }
+
+    // If primary station failed to provide min/max bounds, fall back to a secondary station.
+    // This happens when the primary station API errors while secondary stations succeed for blend.
+    if (forecast.minTide == 0.0f && forecast.maxTide == 0.0f) {
+      for (int i = 1; i < cachedCandidateCount; i++) {
+        float secMin = 0.0f, secMax = 0.0f;
+        fetchNOAATideHeight(String(cachedCandidates[i].id), secMin, secMax);
+        if (secMin != 0.0f || secMax != 0.0f) {
+          forecast.minTide = secMin;
+          forecast.maxTide = secMax;
+          logInfo("[TIDE] min/max fallback from secondary station " + String(cachedCandidates[i].id));
+          break;
+        }
+      }
+    }
   } else {
     logError("No NOAA tide station found, tide unavailable");
     forecast.tideHeight = 0.0f;
@@ -950,14 +976,17 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   if (cachedNoaaGridUrl.isEmpty() || abs(latitude - cachedNoaaWindLat) > 0.5f || abs(longitude - cachedNoaaWindLon) > 0.5f) {
     String pointUrl = "https://api.weather.gov/points/" + String(latitude, 4) + "," + String(longitude, 4);
     http.begin(pointUrl);
+    http.setTimeout(10000);
     http.addHeader("User-Agent", "(SurfCYD, ESP32)");
     http.addHeader("Accept", "application/geo+json");
     code = http.GET();
     if (code == HTTP_CODE_OK) {
       payload = http.getString();
       http.end();
-      DynamicJsonDocument pointDoc(4 * 1024);
-      if (deserializeJson(pointDoc, payload) == DeserializationError::Ok) {
+      StaticJsonDocument<64> pointFilter;
+      pointFilter["properties"]["forecast"] = true;
+      DynamicJsonDocument pointDoc(512);
+      if (deserializeJson(pointDoc, payload, DeserializationOption::Filter(pointFilter)) == DeserializationError::Ok) {
         // Use compact /forecast (14 periods, ~20 KB) instead of /forecast/hourly (156 periods, ~80 KB)
         const char *forecastUrl = pointDoc["properties"]["forecast"];
         if (forecastUrl) {
@@ -976,14 +1005,18 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   // Step 3b: Fetch wind from the compact NWS forecast endpoint.
   if (!cachedNoaaGridUrl.isEmpty()) {
     http.begin(cachedNoaaGridUrl);
+    http.setTimeout(10000);
     http.addHeader("User-Agent", "(SurfCYD, ESP32)");
     http.addHeader("Accept", "application/geo+json");
     code = http.GET();
     if (code == HTTP_CODE_OK) {
       payload = http.getString();
       http.end();
-      DynamicJsonDocument windDoc(16 * 1024);
-      if (deserializeJson(windDoc, payload) == DeserializationError::Ok) {
+      StaticJsonDocument<128> windFilter;
+      windFilter["properties"]["periods"][0]["windSpeed"] = true;
+      windFilter["properties"]["periods"][0]["windDirection"] = true;
+      DynamicJsonDocument windDoc(2 * 1024);
+      if (deserializeJson(windDoc, payload, DeserializationOption::Filter(windFilter)) == DeserializationError::Ok) {
         JsonArray wperiods = windDoc["properties"]["periods"];
         if (!wperiods.isNull() && wperiods.size() > 0) {
           String speedStr = wperiods[0]["windSpeed"]    | "";

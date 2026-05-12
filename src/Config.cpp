@@ -17,3 +17,4 @@ const char *TIDE_DIRECTION_FILE = "/tide_direction.json";
 const char *TIDE_BOUNDS_FILE = "/tide_bounds.json";
 const char *TIDE_HOURLY_FILE = "/tide_hourly.json";
 const char *PLAYER_NAME_FILE = "/player_name.json";
+const char *DEFAULTS_FILE    = "/defaults.json";

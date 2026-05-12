@@ -3,6 +3,7 @@
 
 #include "Types.h"
 #include <time.h>
+#include <vector>
 
 // Logging functions
 void logInfo(const String &message);
@@ -46,5 +47,11 @@ void deleteTideHourlyCheck();
 // Player name storage
 bool savePlayerName(const String &name);
 String loadPlayerName();
+
+// Default locations storage (FIFO, max 5, seeded from hardcoded defaults)
+std::vector<LocationInfo> loadDefaultLocations();
+bool saveDefaultLocations(const std::vector<LocationInfo> &defaults);
+void addToDefaultLocations(const LocationInfo &loc);
+void deleteDefaultLocations();
 
 #endif // STORAGE_H

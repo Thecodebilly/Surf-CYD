@@ -4,6 +4,7 @@
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <vector>
 
 void logInfo(const String &message) { 
   Serial.printf("[INFO  %10lu ms] %s\n", millis(), message.c_str()); 
@@ -441,7 +442,11 @@ bool savePlayerName(const String &name) {
     logError("Failed to open player name file for write.");
     return false;
   }
-  serializeJson(doc, f);
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write player name file.");
+    f.close();
+    return false;
+  }
   f.close();
   logInfo("Saved player name: " + name);
   return true;
@@ -461,4 +466,81 @@ String loadPlayerName() {
   String name = doc["name"] | "";
   logInfo("Loaded player name: " + name);
   return name;
+}
+
+bool saveDefaultLocations(const std::vector<LocationInfo> &defaults) {
+  DynamicJsonDocument doc(1024);
+  JsonArray arr = doc.createNestedArray("defaults");
+  for (const auto &loc : defaults) {
+    JsonObject obj = arr.createNestedObject();
+    obj["name"] = loc.displayName;
+    obj["lat"]  = loc.latitude;
+    obj["lon"]  = loc.longitude;
+  }
+  File f = SPIFFS.open(DEFAULTS_FILE, FILE_WRITE);
+  if (!f) { logError("Failed to open defaults file for write."); return false; }
+  if (serializeJson(doc, f) == 0) {
+    logError("Failed to write defaults file."); f.close(); return false;
+  }
+  f.close();
+  logInfo("Saved " + String(defaults.size()) + " default locations.");
+  return true;
+}
+
+std::vector<LocationInfo> loadDefaultLocations() {
+  std::vector<LocationInfo> defaults;
+  if (!SPIFFS.exists(DEFAULTS_FILE)) {
+    // Seed from hardcoded defaults (treated as oldest)
+    LocationInfo loc1; loc1.displayName = DEFAULT_LOCATION_1_NAME;
+    loc1.latitude = DEFAULT_LOCATION_1_LAT; loc1.longitude = DEFAULT_LOCATION_1_LON; loc1.valid = true;
+    LocationInfo loc2; loc2.displayName = DEFAULT_LOCATION_2_NAME;
+    loc2.latitude = DEFAULT_LOCATION_2_LAT; loc2.longitude = DEFAULT_LOCATION_2_LON; loc2.valid = true;
+    defaults.push_back(loc1);
+    defaults.push_back(loc2);
+    saveDefaultLocations(defaults);
+    logInfo("Seeded default locations from hardcoded values.");
+    return defaults;
+  }
+  File f = SPIFFS.open(DEFAULTS_FILE, FILE_READ);
+  if (!f) { logError("Failed to open defaults file for read."); return defaults; }
+  DynamicJsonDocument doc(1024);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) { logError("Failed to parse defaults file."); return defaults; }
+  JsonArray arr = doc["defaults"].as<JsonArray>();
+  if (!arr.isNull()) {
+    for (JsonVariant entry : arr) {
+      if (defaults.size() >= 5) break;
+      LocationInfo loc;
+      loc.displayName = entry["name"] | "";
+      loc.latitude    = entry["lat"]  | 0.0f;
+      loc.longitude   = entry["lon"]  | 0.0f;
+      loc.valid = !loc.displayName.isEmpty();
+      if (loc.valid) defaults.push_back(loc);
+    }
+  }
+  logInfo("Loaded " + String(defaults.size()) + " default locations.");
+  return defaults;
+}
+
+void addToDefaultLocations(const LocationInfo &loc) {
+  if (!loc.valid) return;
+  std::vector<LocationInfo> defaults = loadDefaultLocations();
+  for (const auto &d : defaults) {
+    if (d.displayName == loc.displayName) {
+      logInfo("Default already exists: " + loc.displayName);
+      return;
+    }
+  }
+  if (defaults.size() >= 5) defaults.erase(defaults.begin());
+  defaults.push_back(loc);
+  saveDefaultLocations(defaults);
+  logInfo("Added to defaults: " + loc.displayName);
+}
+
+void deleteDefaultLocations() {
+  if (SPIFFS.exists(DEFAULTS_FILE)) {
+    SPIFFS.remove(DEFAULTS_FILE);
+    logInfo("Deleted default locations file.");
+  }
 }

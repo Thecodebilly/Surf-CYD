@@ -113,7 +113,7 @@ app.get('/highscore', requireApiKey, async (req, res) => {
 app.get('/records', requireApiKey, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT name, score, created_at FROM records ORDER BY score DESC LIMIT 100'
+      'SELECT name, score, created_at FROM records ORDER BY score DESC LIMIT 10'
     );
     res.json(result.rows.map(row => ({ name: row.name, score: row.score, created_at: row.created_at })));
   } catch (err) {
@@ -128,6 +128,10 @@ app.post('/records', requireApiKey, async (req, res) => {
 
   if (!name || score === undefined || score === null) {
     return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  if (typeof score !== 'number' || !Number.isInteger(score) || score < 0 || score > 2147483647) {
+    return res.status(400).json({ error: 'score must be a non-negative integer up to 2147483647' });
   }
 
   try {

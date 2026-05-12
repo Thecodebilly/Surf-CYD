@@ -43,8 +43,11 @@ TouchPoint getTouchPoint() {
 String touchKeyboardInput(const String &title, const String &initial, bool secret) {
   String value = initial;
   bool shiftOn = false;
+  bool symMode = false;
   const char *rowsUpper[] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM@._-"};
   const char *rowsLower[] = {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm@._-"};
+  // 3 rows × 10 keys — covers the most-needed special chars for WiFi passwords
+  const char *symRows[]   = {"!@#$%^&*()", "-_+=[]{}|\\", "<>;:'\",./?"};
   Rect keyRects[44];
   String keyLabels[44];
   int keyCount = 0;
@@ -67,10 +70,11 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
     if (shown.length() > 28) shown = shown.substring(shown.length() - 28);
     gfx->println(shown);
 
-    const char **rows = shiftOn ? rowsUpper : rowsLower;
+    const char **rows = symMode ? symRows : (shiftOn ? rowsUpper : rowsLower);
+    int numRows = symMode ? 3 : 4;
     keyCount = 0;
     int y = 66;
-    for (int r = 0; r < 4; ++r) {
+    for (int r = 0; r < numRows; ++r) {
       int len = strlen(rows[r]);
       int keyW = (gfx->width() - 16 - (len - 1) * 2) / len;
       for (int i = 0; i < len; ++i) {
@@ -84,16 +88,24 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
       y += 28;
     }
 
-    Rect shift = {8, 180, 60, 26};
-    Rect back = {74, 180, 60, 26};
-    Rect clear = {140, 180, 60, 26};
-    Rect space = {206, 180, 60, 26};
-    Rect done = {272, 180, 40, 26};
-    drawButton(shift, shiftOn ? "lwr" : "CAPS", currentTheme.buttonWarning, currentTheme.text, 1);
-    drawButton(back, "<-", currentTheme.buttonWarning, currentTheme.text, 1);
-    drawButton(clear, "CLR", currentTheme.buttonDanger, currentTheme.text, 1);
+    // Bottom action row — shift repurposes as "ABC" in symbol mode
+    Rect shift  = {8,   180, 60, 26};
+    Rect back   = {74,  180, 60, 26};
+    Rect clear  = {140, 180, 60, 26};
+    Rect space  = {206, 180, 60, 26};
+    Rect done   = {272, 180, 40, 26};
+    Rect symBtn = {318, 180, 60, 26};
+
+    if (symMode) {
+      drawButton(shift, "ABC", currentTheme.buttonWarning, currentTheme.text, 1);
+    } else {
+      drawButton(shift, shiftOn ? "lwr" : "CAPS", currentTheme.buttonWarning, currentTheme.text, 1);
+      drawButton(symBtn, "SYM", currentTheme.buttonSecondary, currentTheme.text, 1);
+    }
+    drawButton(back,  "<-",  currentTheme.buttonWarning,   currentTheme.text, 1);
+    drawButton(clear, "CLR", currentTheme.buttonDanger,    currentTheme.text, 1);
     drawButton(space, "SPC", currentTheme.buttonSecondary, currentTheme.text, 1);
-    drawButton(done, "OK", currentTheme.buttonPrimary, currentTheme.text, 1);
+    drawButton(done,  "OK",  currentTheme.buttonPrimary,   currentTheme.text, 1);
 
     while (true) {
       TouchPoint p = getTouchPoint();
@@ -104,14 +116,19 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
 
       for (int i = 0; i < keyCount; ++i) {
         if (pointInRect(p.x, p.y, keyRects[i])) {
-          value += keyLabels[i];
+          if (value.length() < 64) value += keyLabels[i];
           while (touch.touched()) delay(20);
           goto redraw;
         }
       }
 
       if (pointInRect(p.x, p.y, shift)) {
-        shiftOn = !shiftOn;
+        if (symMode) { symMode = false; } else { shiftOn = !shiftOn; }
+        while (touch.touched()) delay(20);
+        goto redraw;
+      }
+      if (!symMode && pointInRect(p.x, p.y, symBtn)) {
+        symMode = true;
         while (touch.touched()) delay(20);
         goto redraw;
       }
@@ -126,7 +143,7 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
         goto redraw;
       }
       if (pointInRect(p.x, p.y, space)) {
-        value += " ";
+        if (value.length() < 64) value += " ";
         while (touch.touched()) delay(20);
         goto redraw;
       }
@@ -310,40 +327,47 @@ int selectLocationFromList(const std::vector<LocationInfo> &locations) {
   }
 }
 
-int selectDefaultLocation() {
+LocationInfo selectDefaultLocation() {
+  LocationInfo result;
+  std::vector<LocationInfo> defaults = loadDefaultLocations();
+  if (defaults.empty()) return result;
+
+  const int itemHeight = 42;
+  const int startY = 40;
+
   while (true) {
     gfx->fillScreen(currentTheme.background);
     gfx->setTextColor(currentTheme.textSecondary);
     gfx->setTextSize(2);
     gfx->setCursor(10, 10);
     gfx->println("Choose Default:");
-    
-    Rect loc1Btn = {10, 70, 300, 70};
-    Rect loc2Btn = {10, 160, 300, 70};
-    Rect cancelBtn = {10, 250, 300, 40};
-    
-    drawButton(loc1Btn, DEFAULT_LOCATION_1_NAME, currentTheme.buttonPrimary, currentTheme.text, 2);
-    drawButton(loc2Btn, DEFAULT_LOCATION_2_NAME, currentTheme.buttonPrimary, currentTheme.text, 2);
+
+    std::vector<Rect> buttons;
+    for (size_t i = 0; i < defaults.size(); i++) {
+      Rect r = {8, int16_t(startY + i * itemHeight), int16_t(gfx->width() - 16), int16_t(itemHeight - 4)};
+      String label = defaults[i].displayName;
+      if (label.length() > 35) label = label.substring(0, 35) + "...";
+      drawButton(r, label, currentTheme.buttonPrimary, currentTheme.text, 1);
+      buttons.push_back(r);
+    }
+
+    Rect cancelBtn = {8, int16_t(startY + (int)defaults.size() * itemHeight + 4), int16_t(gfx->width() - 16), 30};
     drawButton(cancelBtn, "Cancel", currentTheme.buttonDanger, currentTheme.text, 2);
-    
+
     while (true) {
       TouchPoint p = getTouchPoint();
-      if (!p.pressed) {
-        delay(50);
-        continue;
+      if (!p.pressed) { delay(50); continue; }
+
+      for (size_t i = 0; i < buttons.size(); i++) {
+        if (pointInRect(p.x, p.y, buttons[i])) {
+          while (touch.touched()) delay(20);
+          return defaults[i];
+        }
       }
-      
-      if (pointInRect(p.x, p.y, loc1Btn)) {
+      if (pointInRect(p.x, p.y, cancelBtn)) {
         while (touch.touched()) delay(20);
-        return 1;
-      } else if (pointInRect(p.x, p.y, loc2Btn)) {
-        while (touch.touched()) delay(20);
-        return 2;
-      } else if (pointInRect(p.x, p.y, cancelBtn)) {
-        while (touch.touched()) delay(20);
-        return 0;
+        return result;
       }
-      
       delay(50);
     }
   }
@@ -435,6 +459,7 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
   Rect locationButton = {12, 76, 296, 44};
   Rect saveButton = {12, 140, 144, 44};
   Rect skipButton = {164, 140, 144, 44};
+  Rect addDefaultBtn = {12, 192, 296, 36};
   Rect settingsBtn = {0, 0, 0, 0};
   
   bool needsRedraw = true;
@@ -452,6 +477,9 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
       drawButton(locationButton, shownLocation, currentTheme.buttonSecondary, currentTheme.text, 1);
       drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawButton(skipButton, "Default", currentTheme.buttonList, currentTheme.text, 2);
+      if (cachedLocation.valid) {
+        drawButton(addDefaultBtn, "+ Add to Defaults", currentTheme.buttonSecondary, currentTheme.text, 1);
+      }
       drawSettingsButton(settingsBtn);
       needsRedraw = false;
     }
@@ -497,6 +525,36 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
             gfx->print(String(i + 1) + "/" + String(matches.size()) + ": " + matches[i].displayName.substring(0, 24));
             if (locationHasData(matches[i].latitude, matches[i].longitude)) {
               validMatches.push_back(matches[i]);
+            }
+          }
+
+          if (validMatches.empty()) {
+            // Try 25 more results beyond the initial batch
+            gfx->fillScreen(currentTheme.background);
+            gfx->setTextColor(currentTheme.textSecondary);
+            gfx->setTextSize(2);
+            gfx->setCursor(10, 10);
+            gfx->println("Checking more...");
+
+            auto moreMatches = fetchLocationMatches(searchTerm, (int)matches.size() + 25);
+            std::vector<LocationInfo> unchecked;
+            for (const auto &m : moreMatches) {
+              bool seen = false;
+              for (const auto &prev : matches) {
+                if (m.displayName == prev.displayName) { seen = true; break; }
+              }
+              if (!seen) unchecked.push_back(m);
+            }
+            gfx->setCursor(10, 50);
+            gfx->println("Checking locations...");
+            for (size_t i = 0; i < unchecked.size(); i++) {
+              gfx->fillRect(10, 70, gfx->width() - 20, 20, currentTheme.background);
+              gfx->setCursor(10, 70);
+              gfx->setTextColor(currentTheme.textSecondary);
+              gfx->print(String(i + 1) + "/" + String(unchecked.size()) + ": " + unchecked[i].displayName.substring(0, 24));
+              if (locationHasData(unchecked[i].latitude, unchecked[i].longitude)) {
+                validMatches.push_back(unchecked[i]);
+              }
             }
           }
 
@@ -551,24 +609,9 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
       needsRedraw = true;
     } else if (pointInRect(p.x, p.y, skipButton)) {
       while (touch.touched()) delay(20);
-      // Show default location selection
-      int selected = selectDefaultLocation();
-      if (selected == 1) {
-        cachedLocation.displayName = DEFAULT_LOCATION_1_NAME;
-        cachedLocation.latitude = DEFAULT_LOCATION_1_LAT;
-        cachedLocation.longitude = DEFAULT_LOCATION_1_LON;
-        cachedLocation.valid = true;
-        deleteTideBounds();
-        deleteTideHourlyCheck();
-        deleteTideDirection();
-        clearTideStationCache();
-        saveSurfLocation(cachedLocation);
-        return cachedLocation.displayName;
-      } else if (selected == 2) {
-        cachedLocation.displayName = DEFAULT_LOCATION_2_NAME;
-        cachedLocation.latitude = DEFAULT_LOCATION_2_LAT;
-        cachedLocation.longitude = DEFAULT_LOCATION_2_LON;
-        cachedLocation.valid = true;
+      LocationInfo sel = selectDefaultLocation();
+      if (sel.valid) {
+        cachedLocation = sel;
         deleteTideBounds();
         deleteTideHourlyCheck();
         deleteTideDirection();
@@ -576,6 +619,12 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
         saveSurfLocation(cachedLocation);
         return cachedLocation.displayName;
       }
+      needsRedraw = true;
+    } else if (cachedLocation.valid && pointInRect(p.x, p.y, addDefaultBtn)) {
+      while (touch.touched()) delay(20);
+      addToDefaultLocations(cachedLocation);
+      showStatus("Added to defaults", cachedLocation.displayName, currentTheme.buttonPrimary);
+      delay(1200);
       needsRedraw = true;
     }
 
@@ -589,6 +638,7 @@ int handleMainScreenTouch(const Rect &settingsButton, const Rect &badSurfGraphic
   if (!p.pressed) return 0;
 
   if (pointInRect(p.x, p.y, settingsButton)) {
+    while (touch.touched()) delay(20);
     return 3;  // Enter settings mode
   }
   
@@ -655,7 +705,8 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
     deleteTideBounds();
     deleteTideDirection();
     deleteTideHourlyCheck();
-    
+    deleteDefaultLocations();
+
     showStatus("All settings reset", "Device will restart...", currentTheme.buttonWarning);
     delay(2000);
     ESP.restart();  // Restart to apply reset

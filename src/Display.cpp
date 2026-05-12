@@ -220,7 +220,7 @@ void drawSettingsScreen(Rect &backButton, Rect &forgetButton, Rect &forgetLocati
   
   // Row 2
   forgetLocationButton = {int16_t(startX), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
-  drawButton(forgetLocationButton, "Reset Loc", currentTheme.buttonWarning, currentTheme.text, 2);
+  drawButton(forgetLocationButton, "Reset Location", currentTheme.buttonWarning, currentTheme.text, 2);
   
   waveButton = {int16_t(startX + btnW + gap), int16_t(startY + btnH + gap), int16_t(btnW), int16_t(btnH)};
   drawButton(waveButton, "Reset Wave", currentTheme.buttonDanger, currentTheme.text, 2);

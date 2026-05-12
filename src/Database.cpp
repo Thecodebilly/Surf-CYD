@@ -17,6 +17,7 @@ GlobalHighScore fetchGlobalHighScore() {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(String(API_BASE) + "/records");
+  http.setTimeout(10000);
   int code = http.GET();
 
   if (code == HTTP_CODE_OK) {
@@ -50,6 +51,7 @@ String submitRecord(const String &name, unsigned long score) {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(String(API_BASE) + "/records");
+  http.setTimeout(10000);
   http.addHeader("Content-Type", "application/json");
 
   DynamicJsonDocument body(256);
@@ -90,6 +92,7 @@ Leaderboard fetchLeaderboard() {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(String(API_BASE) + "/records");
+  http.setTimeout(10000);
   int code = http.GET();
 
   if (code == HTTP_CODE_OK) {
