@@ -12,8 +12,11 @@ app.use(function (req, res, next) {
   next();
 });
 
-// Serve the emulator directory as the site root
-app.use(express.static(path.join(__dirname, 'emulator')));
+const emulatorDir = path.join(__dirname, 'emulator');
+
+// Serve under /SurfBoard (proxied from main site) and at root (direct access)
+app.use('/SurfBoard', express.static(emulatorDir));
+app.use('/', express.static(emulatorDir));
 
 app.listen(PORT, function () {
   console.log('Surf CYD server listening on port ' + PORT);
