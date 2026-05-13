@@ -14,6 +14,9 @@ app.use(function (req, res, next) {
 
 const emulatorDir = path.join(__dirname, 'emulator');
 
+// Redirect /SurfBoard → /SurfBoard/ so relative asset paths resolve correctly
+app.get('/SurfBoard', (req, res) => res.redirect(301, '/SurfBoard/'));
+
 // Serve under /SurfBoard (proxied from main site) and at root (direct access)
 app.use('/SurfBoard', express.static(emulatorDir));
 app.use('/', express.static(emulatorDir));
