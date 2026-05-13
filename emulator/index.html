@@ -617,9 +617,25 @@ var Module = {
   print:    function(t) { appendLog('[out] ' + t); },
   printErr: function(t) { appendLog('[err] ' + t); },
 
-  // Redirect stdout/stderr to the log panel
+  onAbort: function(reason) {
+    appendLog('[err] WASM aborted: ' + reason);
+    setStatus('err', 'Crashed: ' + reason);
+    var overlay = document.getElementById('loading-overlay');
+    overlay.classList.add('hidden');
+  },
+
   noInitialRun: false,
 };
+
+// Fail the loading overlay after 30s so it never spins forever
+setTimeout(function() {
+  var overlay = document.getElementById('loading-overlay');
+  if (!overlay.classList.contains('hidden')) {
+    overlay.classList.add('hidden');
+    setStatus('err', 'Load timed out — check console');
+    appendLog('[err] WASM load timed out after 30s');
+  }
+}, 30000);
 </script>
 
 <!-- The compiled WASM JS glue is emitted as surfcyd.js by the Makefile. -->
