@@ -503,22 +503,19 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
         
         // Fetch matching locations
         auto matches = fetchLocationMatches(searchTerm, 8);
-        
-        if (matches.empty()) {
-          gfx->setCursor(10, 50);
-          gfx->setTextColor(currentTheme.error);
-          gfx->println("No locations found");
-          delay(2000);
-          needsRedraw = true;
-        } else {
-          // Filter out locations that have no surf data
+
+        // Running set of all display names already checked, to avoid duplicates across passes
+        std::vector<String> allCheckedNames;
+        for (const auto &m : matches) allCheckedNames.push_back(m.displayName);
+
+        // Check initial results for surf data
+        std::vector<LocationInfo> validMatches;
+        if (!matches.empty()) {
           gfx->setCursor(10, 50);
           gfx->setTextColor(currentTheme.textSecondary);
           gfx->println("Checking locations...");
 
-          std::vector<LocationInfo> validMatches;
           for (size_t i = 0; i < matches.size(); i++) {
-            // Update progress
             gfx->fillRect(10, 70, gfx->width() - 20, 20, currentTheme.background);
             gfx->setCursor(10, 70);
             gfx->setTextColor(currentTheme.textSecondary);
@@ -527,58 +524,223 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
               validMatches.push_back(matches[i]);
             }
           }
-
-          if (validMatches.empty()) {
-            // Try 25 more results beyond the initial batch
-            gfx->fillScreen(currentTheme.background);
-            gfx->setTextColor(currentTheme.textSecondary);
-            gfx->setTextSize(2);
-            gfx->setCursor(10, 10);
-            gfx->println("Checking more...");
-
-            auto moreMatches = fetchLocationMatches(searchTerm, (int)matches.size() + 25);
-            std::vector<LocationInfo> unchecked;
-            for (const auto &m : moreMatches) {
-              bool seen = false;
-              for (const auto &prev : matches) {
-                if (m.displayName == prev.displayName) { seen = true; break; }
-              }
-              if (!seen) unchecked.push_back(m);
-            }
-            gfx->setCursor(10, 50);
-            gfx->println("Checking locations...");
-            for (size_t i = 0; i < unchecked.size(); i++) {
-              gfx->fillRect(10, 70, gfx->width() - 20, 20, currentTheme.background);
-              gfx->setCursor(10, 70);
-              gfx->setTextColor(currentTheme.textSecondary);
-              gfx->print(String(i + 1) + "/" + String(unchecked.size()) + ": " + unchecked[i].displayName.substring(0, 24));
-              if (locationHasData(unchecked[i].latitude, unchecked[i].longitude)) {
-                validMatches.push_back(unchecked[i]);
-              }
-            }
-          }
-
-          if (validMatches.empty()) {
-            gfx->fillScreen(currentTheme.background);
-            gfx->setCursor(10, 50);
-            gfx->setTextColor(currentTheme.error);
-            gfx->println("No surf data available");
-            gfx->setCursor(10, 75);
-            gfx->setTextColor(currentTheme.textSecondary);
-            gfx->println("Try a coastal location");
-            delay(2500);
-          } else if (validMatches.size() == 1) {
-            location = validMatches[0].displayName;
-            cachedLocation = validMatches[0];
-          } else {
-            int selectedIndex = selectLocationFromList(validMatches);
-            if (selectedIndex >= 0 && selectedIndex < (int)validMatches.size()) {
-              location = validMatches[selectedIndex].displayName;
-              cachedLocation = validMatches[selectedIndex];
-            }
-          }
-          needsRedraw = true;
         }
+
+        // Fuzzy pass: runs when the initial search returned nothing at all,
+        // OR when results were found but none had surf data.
+        if (validMatches.empty()) {
+          gfx->fillScreen(currentTheme.background);
+          gfx->setTextColor(currentTheme.textSecondary);
+          gfx->setTextSize(2);
+          gfx->setCursor(10, 10);
+          gfx->println("Fuzzy searching...");
+
+          // Build fuzzy query variants from the original search term
+          std::vector<String> fuzzyQueries;
+
+          // Variant 1: each space-separated word (catches abbreviations like "jax" → Jacksonville)
+          {
+            String term = searchTerm + " ";
+            int start = 0;
+            for (int ci = 0; ci < (int)term.length(); ci++) {
+              char c = term.charAt(ci);
+              if (c == ' ' || c == ',') {
+                String word = term.substring(start, ci);
+                word.trim();
+                if (word.length() > 1 && word != searchTerm) {
+                  bool alreadyHave = false;
+                  for (const auto &fq : fuzzyQueries) {
+                    if (fq == word) { alreadyHave = true; break; }
+                  }
+                  if (!alreadyHave) fuzzyQueries.push_back(word);
+                }
+                start = ci + 1;
+              }
+            }
+          }
+
+          // Variant 2: strip common geographic/venue suffixes
+          {
+            static const char *suffixes[] = {
+              " pier", " beach", " bay", " cove", " coast", " shore",
+              " point", " harbor", " harbour", " inlet", " head",
+              " island", " islands", " cape", " reef", " rocks",
+              " pier", " jetty", " boardwalk", nullptr
+            };
+            String stripped = searchTerm;
+            String lStripped = stripped;
+            lStripped.toLowerCase();
+            for (int qi = 0; suffixes[qi] != nullptr; qi++) {
+              String lq = String(suffixes[qi]);
+              int found = lStripped.indexOf(lq);
+              if (found > 0) {
+                stripped = stripped.substring(0, found) + stripped.substring(found + lq.length());
+                lStripped = stripped;
+                lStripped.toLowerCase();
+              }
+            }
+            stripped.trim();
+            if (stripped != searchTerm && stripped.length() > 1) {
+              bool alreadyHave = false;
+              for (const auto &fq : fuzzyQueries) {
+                if (fq == stripped) { alreadyHave = true; break; }
+              }
+              if (!alreadyHave) fuzzyQueries.push_back(stripped);
+            }
+          }
+
+          // Variant 3: each comma-separated segment
+          {
+            String term = searchTerm + ",";
+            int start = 0;
+            for (int ci = 0; ci < (int)term.length(); ci++) {
+              if (term.charAt(ci) == ',') {
+                String seg = term.substring(start, ci);
+                seg.trim();
+                if (seg.length() > 1 && seg != searchTerm) {
+                  bool alreadyHave = false;
+                  for (const auto &fq : fuzzyQueries) {
+                    if (fq == seg) { alreadyHave = true; break; }
+                  }
+                  if (!alreadyHave) fuzzyQueries.push_back(seg);
+                }
+                start = ci + 1;
+              }
+            }
+          }
+
+          // Collect unique candidates from all fuzzy variants
+          std::vector<LocationInfo> unchecked;
+          for (const auto &query : fuzzyQueries) {
+            auto results = fetchLocationMatches(query, 10);
+            for (const auto &r : results) {
+              bool seen = false;
+              for (const auto &n : allCheckedNames) {
+                if (r.displayName == n) { seen = true; break; }
+              }
+              if (!seen) {
+                for (const auto &prev : unchecked) {
+                  if (r.displayName == prev.displayName) { seen = true; break; }
+                }
+              }
+              if (!seen) unchecked.push_back(r);
+            }
+          }
+
+          gfx->setCursor(10, 50);
+          gfx->println("Checking locations...");
+          for (size_t i = 0; i < unchecked.size(); i++) {
+            gfx->fillRect(10, 70, gfx->width() - 20, 20, currentTheme.background);
+            gfx->setCursor(10, 70);
+            gfx->setTextColor(currentTheme.textSecondary);
+            gfx->print(String(i + 1) + "/" + String(unchecked.size()) + ": " + unchecked[i].displayName.substring(0, 24));
+            if (locationHasData(unchecked[i].latitude, unchecked[i].longitude)) {
+              validMatches.push_back(unchecked[i]);
+            }
+            allCheckedNames.push_back(unchecked[i].displayName);
+          }
+        }
+
+        // Deep pass: if fuzzy also found nothing, try combining each word with
+        // coastal keywords and re-query with a larger result count.
+        if (validMatches.empty()) {
+          gfx->fillScreen(currentTheme.background);
+          gfx->setTextColor(currentTheme.textSecondary);
+          gfx->setTextSize(2);
+          gfx->setCursor(10, 10);
+          gfx->println("Deep searching...");
+
+          // Pull all individual words from the search term
+          std::vector<String> words;
+          {
+            String term = searchTerm + " ";
+            int start = 0;
+            for (int ci = 0; ci < (int)term.length(); ci++) {
+              char c = term.charAt(ci);
+              if (c == ' ' || c == ',') {
+                String w = term.substring(start, ci);
+                w.trim();
+                if (w.length() > 1) {
+                  bool have = false;
+                  for (const auto &ww : words) { if (ww == w) { have = true; break; } }
+                  if (!have) words.push_back(w);
+                }
+                start = ci + 1;
+              }
+            }
+          }
+
+          static const char *coastalSuffixes[] = {
+            " Beach", " Coast", " Pier", " Shores", " Bay", nullptr
+          };
+
+          std::vector<String> deepQueries;
+          // Re-query each word alone with more results
+          for (const auto &w : words) {
+            bool have = false;
+            for (const auto &dq : deepQueries) { if (dq == w) { have = true; break; } }
+            if (!have) deepQueries.push_back(w);
+          }
+          // Also try each word + coastal suffix combos
+          for (const auto &w : words) {
+            for (int si = 0; coastalSuffixes[si] != nullptr; si++) {
+              String combo = w + String(coastalSuffixes[si]);
+              bool have = false;
+              for (const auto &dq : deepQueries) { if (dq == combo) { have = true; break; } }
+              if (!have) deepQueries.push_back(combo);
+            }
+          }
+
+          std::vector<LocationInfo> deepCandidates;
+          for (const auto &query : deepQueries) {
+            auto results = fetchLocationMatches(query, 15);
+            for (const auto &r : results) {
+              bool seen = false;
+              for (const auto &n : allCheckedNames) {
+                if (r.displayName == n) { seen = true; break; }
+              }
+              if (!seen) {
+                for (const auto &prev : deepCandidates) {
+                  if (r.displayName == prev.displayName) { seen = true; break; }
+                }
+              }
+              if (!seen) deepCandidates.push_back(r);
+            }
+          }
+
+          gfx->setCursor(10, 50);
+          gfx->println("Checking locations...");
+          for (size_t i = 0; i < deepCandidates.size(); i++) {
+            gfx->fillRect(10, 70, gfx->width() - 20, 20, currentTheme.background);
+            gfx->setCursor(10, 70);
+            gfx->setTextColor(currentTheme.textSecondary);
+            gfx->print(String(i + 1) + "/" + String(deepCandidates.size()) + ": " + deepCandidates[i].displayName.substring(0, 24));
+            if (locationHasData(deepCandidates[i].latitude, deepCandidates[i].longitude)) {
+              validMatches.push_back(deepCandidates[i]);
+            }
+          }
+        }
+
+        if (validMatches.empty()) {
+          gfx->fillScreen(currentTheme.background);
+          gfx->setCursor(10, 50);
+          gfx->setTextColor(currentTheme.error);
+          gfx->println("No surf data available");
+          gfx->setCursor(10, 75);
+          gfx->setTextColor(currentTheme.textSecondary);
+          gfx->println("Try a coastal location");
+          delay(2500);
+        } else if (validMatches.size() == 1) {
+          location = validMatches[0].displayName;
+          cachedLocation = validMatches[0];
+        } else {
+          int selectedIndex = selectLocationFromList(validMatches);
+          if (selectedIndex >= 0 && selectedIndex < (int)validMatches.size()) {
+            location = validMatches[selectedIndex].displayName;
+            cachedLocation = validMatches[selectedIndex];
+          }
+        }
+        needsRedraw = true;
       }
     } else if (pointInRect(p.x, p.y, saveButton) && !location.isEmpty()) {
       while (touch.touched()) delay(20);
