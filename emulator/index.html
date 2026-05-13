@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Surf CYD — Real-Time Surf Forecasts on ESP32</title>
+<style>
+  /* ── Reset & base ─────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #060b14;
+    --surface:   #0c1525;
+    --border:    #1a2d45;
+    --primary:   #00d4ff;
+    --secondary: #ff7849;
+    --text:      #c8d8e8;
+    --text-dim:  #5a7a99;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Nav ──────────────────────────────────────────────────────────────────── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(6, 11, 20, 0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    height: 56px;
+  }
+
+  .nav-brand {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .nav-github {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    transition: border-color .2s, color .2s;
+  }
+  .nav-github:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    text-decoration: none;
+  }
+  .nav-github svg { flex-shrink: 0; }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────────── */
+  .hero {
+    text-align: center;
+    padding: 72px 24px 48px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .hero-badge {
+    display: inline-block;
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    color: var(--primary);
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+    font-family: 'Courier New', Courier, monospace;
+  }
+
+  .hero h1 {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 800;
+    line-height: 1.15;
+    color: #ffffff;
+    margin-bottom: 20px;
+    letter-spacing: -0.5px;
+  }
+
+  .hero h1 span { color: var(--primary); }
+
+  .hero p {
+    font-size: 1.1rem;
+    color: var(--text-dim);
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  /* ── Emulator section ─────────────────────────────────────────────────────── */
+  #emulator-section {
+    padding: 0 24px 72px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .section-label {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+  }
+
+  /* Device shell */
+  #device {
+    background: #0a1020;
+    border-radius: 20px;
+    padding: 20px 24px 24px;
+    box-shadow:
+      0 0 0 1px var(--border),
+      0 0 60px rgba(0, 212, 255, 0.12),
+      0 8px 40px rgba(0, 0, 0, 0.7);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: min(1008px, calc(100vw - 48px));
+  }
+
+  /* Canvas – logical 480×320, CSS width fills device shell */
+  canvas {
+    width: min(960px, calc(100vw - 80px));
+    aspect-ratio: 480 / 320;
+    image-rendering: pixelated;
+    cursor: pointer;
+    border: 1px solid #1e3050;
+    border-radius: 6px;
+    display: block;
+  }
+
+  /* Status bar */
+  #status-bar {
+    width: min(960px, calc(100vw - 80px));
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-family: 'Courier New', Courier, monospace;
+  }
+
+  #status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #2a4060;
+    flex-shrink: 0;
+    transition: background .3s;
+  }
+  #status-dot.ok   { background: #00e676; box-shadow: 0 0 6px #00e676; }
+  #status-dot.busy { background: #ffab40; animation: blink .7s ease-in-out infinite; }
+  #status-dot.err  { background: #ff5252; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* Log panel */
+  #log {
+    width: min(960px, calc(100vw - 80px));
+    max-height: 120px;
+    overflow-y: auto;
+    background: #04080f;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.65rem;
+    color: #3d5c7a;
+    font-family: 'Courier New', Courier, monospace;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  #log::-webkit-scrollbar { width: 4px; }
+  #log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Controls */
+  #controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .ctrl-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 7px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: border-color .2s, color .2s, background .2s;
+  }
+  .ctrl-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(0, 212, 255, 0.06);
+  }
+
+  /* ── Feature cards ────────────────────────────────────────────────────────── */
+  #features {
+    padding: 80px 24px;
+    max-width: 1040px;
+    margin: 0 auto;
+  }
+
+  .section-title {
+    text-align: center;
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .section-sub {
+    text-align: center;
+    color: var(--text-dim);
+    margin-bottom: 48px;
+    font-size: 0.95rem;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+
+  @media (max-width: 900px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 520px) {
+    .cards { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 22px;
+    transition: border-color .25s, transform .25s;
+  }
+  .card:hover {
+    border-color: rgba(0, 212, 255, 0.4);
+    transform: translateY(-3px);
+  }
+
+  .card-icon {
+    font-size: 1.8rem;
+    margin-bottom: 14px;
+    display: block;
+  }
+
+  .card h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+
+  .card p {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+
+  /* ── Build Your Own ───────────────────────────────────────────────────────── */
+  #build {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 80px 24px;
+    text-align: center;
+  }
+
+  #build h2 {
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+
+  #build p {
+    color: var(--text-dim);
+    max-width: 560px;
+    margin: 0 auto 36px;
+    font-size: 0.97rem;
+  }
+
+  .price-tag {
+    color: var(--secondary);
+    font-weight: 700;
+  }
+
+  .gh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--primary);
+    color: #060b14;
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 13px 28px;
+    border-radius: 10px;
+    transition: opacity .2s, transform .2s;
+  }
+  .gh-btn:hover {
+    opacity: 0.88;
+    transform: translateY(-2px);
+    text-decoration: none;
+  }
+
+  /* ── Footer ───────────────────────────────────────────────────────────────── */
+  footer {
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    border-top: 1px solid var(--border);
+  }
+
+  footer span { color: var(--primary); }
+
+  /* ── Loading overlay ──────────────────────────────────────────────────────── */
+  #loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 11, 20, 0.97);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 999;
+    transition: opacity .4s;
+  }
+  #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+  .spinner {
+    width: 44px; height: 44px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #loading-text {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    font-family: 'Courier New', Courier, monospace;
+    letter-spacing: 1px;
+  }
+
+  .loading-brand {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+
+  /* ── Responsive nav ───────────────────────────────────────────────────────── */
+  @media (max-width: 480px) {
+    nav { padding: 0 16px; }
+    .nav-brand { font-size: 0.95rem; letter-spacing: 2px; }
+    .nav-github span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading-overlay">
+  <div class="loading-brand">SURF CYD</div>
+  <div class="spinner"></div>
+  <div id="loading-text">Compiling WASM…</div>
+</div>
+
+<!-- Navigation -->
+<nav>
+  <div class="nav-brand">SURF CYD</div>
+  <a href="https://github.com/Thecodebilly/Surf-CYD" class="nav-github" target="_blank" rel="noopener">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.749 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+    </svg>
+    <span>View on GitHub</span>
+  </a>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-badge">Open Source · ESP32 · WebAssembly</div>
+  <h1>Real-Time Surf Forecasts<br>for <span>Surfers</span></h1>
+  <p>Open-source ESP32 display — live wave, tide &amp; wind data from NOAA and Open-Meteo</p>
+</section>
+
+<!-- Emulator -->
+<section id="emulator-section">
+  <div class="section-label">&#9654; Live Device Emulator</div>
+  <div id="device">
+    <canvas id="surfCanvas" width="480" height="320"></canvas>
+    <div id="status-bar">
+      <div id="status-dot"></div>
+      <span id="status-msg">Loading…</span>
+    </div>
+    <div id="log"></div>
+    <div id="controls">
+      <button class="ctrl-btn" onclick="clearStorage()">Reset Storage</button>
+      <button class="ctrl-btn" onclick="document.getElementById('log').innerHTML=''">Clear Log</button>
+      <button class="ctrl-btn" onclick="clearStorage();location.reload()">First-Boot Reset</button>
+    </div>
+  </div>
+</section>
+
+<!-- Feature cards -->
+<section id="features">
+  <h2 class="section-title">Everything you need to check the surf</h2>
+  <p class="section-sub">All data fetched live from free public APIs — no subscription required.</p>
+  <div class="cards">
+    <div class="card">
+      <span class="card-icon">🌊</span>
+      <h3>Wave Height &amp; Period</h3>
+      <p>Hourly swell data from the Open-Meteo Marine API, right on your desk.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">🌊</span>
+      <h3>Tide Data</h3>
+      <p>NOAA tide stations deliver daily high/low ranges so you never miss a window.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">💨</span>
+      <h3>Wind Speed &amp; Direction</h3>
+      <p>NOAA NWS forecasts show onshore vs offshore conditions at a glance.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">🏄</span>
+      <h3>Surf Rating</h3>
+      <p>Good / Fair / Poor rating computed from your own configurable thresholds.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Build Your Own -->
+<section id="build">
+  <h2>Build Your Own for ~<span class="price-tag">$15</span></h2>
+  <p>The hardware is a <strong>ESP32 CYD</strong> (Cheap Yellow Display). Flash our open-source firmware and you're surfing.</p>
+  <a href="https://github.com/Thecodebilly/Surf-CYD" class="gh-btn" target="_blank" rel="noopener">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.749 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+    </svg>
+    Get the Firmware on GitHub
+  </a>
+</section>
+
+<!-- Footer -->
+<footer>
+  &copy; 2025 <span>Surf CYD</span> &middot; Open Source &middot; Built with ESP32 + Emscripten
+</footer>
+
+<script>
+// ── Log helper ────────────────────────────────────────────────────────────────
+const logEl = document.getElementById('log');
+function appendLog(msg) {
+  var line = document.createElement('div');
+  line.textContent = msg;
+  logEl.appendChild(line);
+  if (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setStatus(state, msg) {
+  var dot = document.getElementById('status-dot');
+  dot.className = state === 'ok' ? 'ok' : state === 'busy' ? 'busy' : 'err';
+  document.getElementById('status-msg').textContent = msg;
+}
+
+function clearStorage() {
+  var keys = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k && k.startsWith('spiffs:')) keys.push(k);
+  }
+  keys.forEach(function(k){ localStorage.removeItem(k); });
+  appendLog('[emu] Storage cleared — reload to restart');
+}
+
+// Pre-seed WiFi credentials and a default location so the emulator skips
+// setup screens and goes straight to the forecast. Only seeds if not already set.
+function seedDemoData() {
+  var wifiKey    = 'spiffs:/wifi.json';
+  var locationKey = 'spiffs:/location.json';
+  var keysKey    = 'spiffs:__keys__';
+
+  // Fake WiFi — any non-empty SSID satisfies WifiCredentials.valid check
+  if (!localStorage.getItem(wifiKey)) {
+    localStorage.setItem(wifiKey, JSON.stringify({ssid: 'emulator', password: ''}));
+  }
+  // Default location: Jacksonville Beach, FL (matches firmware defaults)
+  if (!localStorage.getItem(locationKey)) {
+    localStorage.setItem(locationKey, JSON.stringify({
+      location: 'Jax Beach Pier', latitude: 30.3268, longitude: -81.3836
+    }));
+  }
+  // Keep the key list in sync
+  var stored = JSON.parse(localStorage.getItem(keysKey) || '[]');
+  ['/wifi.json', '/location.json'].forEach(function(p) {
+    if (stored.indexOf(p) === -1) stored.push(p);
+  });
+  localStorage.setItem(keysKey, JSON.stringify(stored));
+}
+seedDemoData();
+
+// ── Touch state (read by XPT2046 shim via EM_ASM) ────────────────────────────
+var Module = {
+  touchLatch:       false,
+  mouseDown:        false,
+  touchX:           0,
+  touchY:           0,
+  _lastFetchStatus: 0,
+
+  // Canvas context – set in onRuntimeInitialized
+  ctx:         null,
+
+  // RGB565 → CSS colour, applying hardware inversion (XOR 0xFFFF).
+  rgb565: function(color) {
+    var c = (color ^ 0xFFFF) & 0xFFFF;
+    var r = ((c >> 11) & 0x1F) * 8;
+    var g = ((c >>  5) & 0x3F) * 4;
+    var b = ( c        & 0x1F) * 8;
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  },
+
+  // GFX text renderer – draws text at (x,y) using the bitmap-font metric:
+  // character cell width = 6 * textSize, height = 8 * textSize.
+  // rgb565Color is the raw uint16_t colour passed from C++.
+  gfxText: function(x, y, textSize, text, rgb565Color) {
+    if (!text || !Module.ctx) return;
+    var ctx  = Module.ctx;
+    var sz   = textSize | 0;
+    var cw   = 6 * sz;          // exact char width the C++ code assumes
+    var fh   = sz * 8;          // font height in px
+    ctx.font         = 'bold ' + fh + 'px "Courier New", Courier, monospace';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle    = Module.rgb565(rgb565Color);
+    for (var i = 0; i < text.length; i++) {
+      ctx.fillText(text[i], x + i * cw, y);
+    }
+  },
+
+  // Emscripten lifecycle
+  onRuntimeInitialized: function() {
+    var canvas = document.getElementById('surfCanvas');
+    Module.ctx = canvas.getContext('2d');
+
+    // ── Touch / mouse wiring ─────────────────────────────────────────────────
+    function canvasCoords(e) {
+      var rect   = canvas.getBoundingClientRect();
+      var scaleX = canvas.width  / rect.width;
+      var scaleY = canvas.height / rect.height;
+      var src    = e.touches ? e.touches[0] : e;
+      return {
+        x: Math.floor((src.clientX - rect.left) * scaleX),
+        y: Math.floor((src.clientY - rect.top)  * scaleY)
+      };
+    }
+    function onDown(e) {
+      e.preventDefault();
+      var p = canvasCoords(e);
+      Module.touchX     = p.x;
+      Module.touchY     = p.y;
+      Module.touchLatch = true;
+      Module.mouseDown  = true;
+    }
+    function onUp(e) {
+      e.preventDefault();
+      Module.mouseDown = false;
+      // Leave touchLatch until C++ calls getPoint() to consume it.
+    }
+    canvas.addEventListener('mousedown',  onDown);
+    canvas.addEventListener('mouseup',    onUp);
+    canvas.addEventListener('touchstart', onDown, { passive: false });
+    canvas.addEventListener('touchend',   onUp,   { passive: false });
+
+    // ── Hide loading overlay ──────────────────────────────────────────────────
+    var overlay = document.getElementById('loading-overlay');
+    overlay.classList.add('hidden');
+    setStatus('busy', 'Running setup()…');
+    appendLog('[emu] WASM runtime ready — starting device firmware');
+  },
+
+  print:    function(t) { appendLog('[out] ' + t); },
+  printErr: function(t) { appendLog('[err] ' + t); },
+
+  // Redirect stdout/stderr to the log panel
+  noInitialRun: false,
+};
+</script>
+
+<!-- The compiled WASM JS glue is emitted as surfcyd.js by the Makefile. -->
+<script src="surfcyd.js"></script>
+
+<script>
+// After the firmware starts running, update status.
+// We poll for a brief period then assume it's running.
+var _checkRunning = setInterval(function() {
+  if (Module && Module.ctx) {
+    setStatus('ok', 'Running');
+    clearInterval(_checkRunning);
+  }
+}, 500);
+</script>
+
+</body>
+</html>
