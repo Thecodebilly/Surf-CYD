@@ -1,3 +1,11 @@
-.vscode
-lib
-.*node_modules/
+# PlatformIO build artifacts and toolchain cache
+.pio/
+
+# Node / Railway server
+node_modules/
+
+# Editor
+.vscode/
+
+# Misc
+lib/

@@ -1,0 +1,5 @@
+# Compiled WebAssembly output — rebuild with `make`
+# surfcyd.js and surfcyd.wasm are intentionally committed for Railway deployment.
+# surfcyd.js
+# surfcyd.wasm
+surfcyd.js.map
