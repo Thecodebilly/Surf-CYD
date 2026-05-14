@@ -16,11 +16,12 @@
 // HTTPClient.h declares the extern prototype; all source files link to this.
 EM_ASYNC_JS(char*, _js_http_fetch,
     (const char* jsMethod, const char* jsUrl,
-     const char* jsHeaders, const char* jsBody),
+     const char* jsHeaders, const char* jsBody, int jsTimeoutMs),
 {
-    var method = UTF8ToString(jsMethod);
-    var url    = UTF8ToString(jsUrl);
-    var opts   = { method: method };
+    var method  = UTF8ToString(jsMethod);
+    var url     = UTF8ToString(jsUrl);
+    var timeout = jsTimeoutMs > 0 ? jsTimeoutMs : 10000;
+    var opts    = { method: method, signal: AbortSignal.timeout(timeout) };
 
     var hdrStr = UTF8ToString(jsHeaders);
     if (hdrStr && hdrStr.length) {
