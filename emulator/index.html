@@ -581,8 +581,8 @@ var Module = {
     }
     function onUp(e) {
       e.preventDefault();
-      Module.mouseDown = false;
-      // Leave touchLatch until C++ calls getPoint() to consume it.
+      Module.mouseDown  = false;
+      Module.touchLatch = false;
     }
     canvas.addEventListener('mousedown',  onDown);
     canvas.addEventListener('mouseup',    onUp);
