@@ -15,8 +15,11 @@ struct LeaderboardEntry {
   unsigned long score = 0;
 };
 
+// Number of records the leaderboard screen shows.
+static const int LEADERBOARD_SIZE = 10;
+
 struct Leaderboard {
-  LeaderboardEntry entries[10];
+  LeaderboardEntry entries[LEADERBOARD_SIZE];
   int count = 0;
   bool valid = false;
 };

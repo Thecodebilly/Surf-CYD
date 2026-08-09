@@ -149,22 +149,17 @@ void runSurfGame(Rect &exitButton) {
   // Draw static ocean background
   gfx->fillRect(0, surferY - 15, screenWidth, 55, oceanColor);
   
-  // Draw exit button (only once) with inverted colors
-  gfx->fillRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, exitBgColor);
-  gfx->drawRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, currentTheme.border);
-  gfx->setTextColor(exitTextColor);
-  gfx->setTextSize(1);
-  gfx->setCursor(exitButton.x + 8, exitButton.y + (exitButton.h / 2) - 4);
-  gfx->println("Exit");
-  
+  // Draw exit button (only once)
+  drawButton(exitButton, "Exit", exitBgColor, exitTextColor, 1);
+
   // Draw initial score
   gfx->setTextColor(textColor);
   gfx->setTextSize(2);
   gfx->setCursor(10, 10);
   gfx->print("Score: 0");
 
-  // "SHARKS!" banner — opposite of red = cyan (0x07FF)
-  gfx->setTextColor(0x07FF);
+  // "SHARKS!" banner
+  gfx->setTextColor(currentTheme.error);
   gfx->setTextSize(2);
   gfx->setCursor(screenWidth / 2 - 42, 36);
   gfx->println("SHARKS!");
@@ -467,13 +462,8 @@ void runSurfGame(Rect &exitButton) {
     frameCount++;
     if (frameCount >= 20) {
       frameCount = 0;
-      gfx->fillRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, exitBgColor);
-      gfx->drawRoundRect(exitButton.x, exitButton.y, exitButton.w, exitButton.h, 6, currentTheme.border);
-      gfx->setTextColor(exitTextColor);
-      gfx->setTextSize(1);
-      gfx->setCursor(exitButton.x + 8, exitButton.y + (exitButton.h / 2) - 4);
-      gfx->println("Exit");
-      gfx->setTextColor(0x07FF);
+      drawButton(exitButton, "Exit", exitBgColor, exitTextColor, 1);
+      gfx->setTextColor(currentTheme.error);
       gfx->setTextSize(2);
       gfx->setCursor(screenWidth / 2 - 42, 36);
       gfx->println("SHARKS!");
@@ -522,55 +512,31 @@ void runSurfGame(Rect &exitButton) {
   }
   
   // Game over screen
-  gfx->fillScreen(bgColor);
-  gfx->setTextColor(currentTheme.error);
-  gfx->setTextSize(4);
-  gfx->setCursor(screenWidth / 2 - 100, screenHeight / 2 - 60);
-  gfx->println("Game Over!");
-  
-  gfx->setTextColor(textColor);
-  gfx->setTextSize(3);
-  gfx->setCursor(screenWidth / 2 - 80, screenHeight / 2 - 10);
-  gfx->print("Score: ");
-  gfx->println(score);
-  
+  gfx->fillScreen(currentTheme.background);
+  drawCenteredText("Game Over!", screenWidth / 2, 54, 4, currentTheme.error);
+  gfx->fillRect(screenWidth / 2 - 30, 92, 60, 4, currentTheme.accent);
+
+  drawCenteredText("SCORE", screenWidth / 2, 110, 2, currentTheme.textSecondary);
+  drawCenteredText(String(score), screenWidth / 2, 132, 5, textColor);
+
   // Show high score
-  gfx->setTextColor(currentTheme.accent);
-  gfx->setTextSize(2);
-  gfx->setCursor(screenWidth / 2 - 80, screenHeight / 2 + 25);
-  gfx->print("Local Best: ");
-  gfx->println(highScore);
-  
+  drawCenteredText("Local Best: " + String(highScore), screenWidth / 2, 190, 2, currentTheme.textSecondary);
+
   // Show global high score
   if (globalHighScore > 0) {
-    gfx->setTextColor(currentTheme.buttonPrimary);
-    gfx->setTextSize(2);
-    gfx->setCursor(screenWidth / 2 - 95, screenHeight / 2 + 50);
-    gfx->print("World: ");
-    gfx->print(globalHighScore);
-    gfx->print(" (");
-    gfx->print(globalHighScoreName);
-    gfx->println(")");
+    drawCenteredText("World: " + String(globalHighScore) + " (" + globalHighScoreName + ")",
+                     screenWidth / 2, 214, 2, currentTheme.textSecondary);
   }
-  
+
   if (newLocalHighScore && score > 0) {
-    gfx->setTextColor(currentTheme.success);
-    gfx->setTextSize(2);
-    gfx->setCursor(screenWidth / 2 - 80, screenHeight / 2 + 75);
-    gfx->println("NEW LOCAL RECORD!");
+    drawCenteredText("NEW LOCAL RECORD!", screenWidth / 2, 240, 2, currentTheme.success);
   }
-  
+
   if (newGlobalHighScore) {
-    gfx->setTextColor(0xF800);  // Red
-    gfx->setTextSize(3);
-    gfx->setCursor(screenWidth / 2 - 110, screenHeight / 2 + 105);
-    gfx->println("WORLD RECORD!");
+    drawCenteredText("WORLD RECORD!", screenWidth / 2, 264, 3, currentTheme.accent);
   }
-  
-  gfx->setTextColor(currentTheme.textSecondary);
-  gfx->setTextSize(2);
-  gfx->setCursor(screenWidth / 2 - 90, screenHeight / 2 + 140);
-  gfx->println("Touch to continue");
+
+  drawCenteredText("touch to continue", screenWidth / 2, 302, 1, currentTheme.textSecondary);
   
   // Mandatory 0.5-second wait before accepting touch
   delay(500);
@@ -588,33 +554,21 @@ void runSurfGame(Rect &exitButton) {
     String playerName = loadPlayerName();
     if (playerName.isEmpty()) playerName = "Player";
 
-    gfx->fillScreen(currentTheme.background);
-    gfx->setTextColor(currentTheme.text);
-    gfx->setTextSize(2);
-    gfx->setCursor(screenWidth / 2 - 100, screenHeight / 2 - 10);
-    gfx->println("Submitting score...");
+    showStatus("Submitting score...", playerName + "  -  " + String(score), currentTheme.textSecondary);
 
     String submitError = submitRecord(playerName, score);
 
     gfx->fillScreen(currentTheme.background);
     if (submitError.isEmpty()) {
-      gfx->setTextColor(currentTheme.success);
-      gfx->setTextSize(2);
-      gfx->setCursor(screenWidth / 2 - 90, screenHeight / 2 - 20);
-      gfx->println("Score submitted!");
-      gfx->setTextColor(currentTheme.text);
-      gfx->setCursor(screenWidth / 2 - 40, screenHeight / 2 + 10);
-      gfx->print(playerName);
-      gfx->setCursor(screenWidth / 2 - 40, screenHeight / 2 + 35);
-      gfx->print(String(score));
+      gfx->fillRect(screenWidth / 2 - 26, 102, 52, 4, currentTheme.accent);
+      drawCenteredText("Score submitted!", screenWidth / 2, 124, 3, currentTheme.success);
+      drawCenteredText(playerName, screenWidth / 2, 164, 2, currentTheme.text);
+      drawCenteredText(String(score), screenWidth / 2, 188, 2, currentTheme.textSecondary);
     } else {
-      gfx->setTextColor(currentTheme.error);
-      gfx->setTextSize(2);
-      gfx->setCursor(screenWidth / 2 - 85, screenHeight / 2 - 30);
-      gfx->println("Submission failed:");
+      drawCenteredText("Submission failed", screenWidth / 2, 100, 2, currentTheme.error);
       gfx->setTextColor(currentTheme.textSecondary);
       gfx->setTextSize(1);
-      int16_t errY = screenHeight / 2;
+      int16_t errY = 132;
       String err = submitError;
       while (err.length() > 0) {
         int cut = min((int)err.length(), 42);
@@ -624,11 +578,8 @@ void runSurfGame(Rect &exitButton) {
         errY += 12;
       }
     }
-    
-    gfx->setTextColor(currentTheme.textSecondary);
-    gfx->setTextSize(2);
-    gfx->setCursor(screenWidth / 2 - 90, screenHeight / 2 + 80);
-    gfx->println("Touch to continue");
+
+    drawCenteredText("touch to continue", screenWidth / 2, 302, 1, currentTheme.textSecondary);
     
     // Wait for touch
     while (!touch.touched()) {
@@ -643,87 +594,76 @@ void runSurfGame(Rect &exitButton) {
 
 void showLeaderboard() {
   const int16_t screenWidth = gfx->width();
-  const int16_t screenHeight = gfx->height();
-  
-  // Use theme colors directly — display hardware handles inversion for both modes
+
   uint16_t bgColor        = currentTheme.background;
   uint16_t textColor      = currentTheme.text;
-  uint16_t accentColor    = currentTheme.accent;
   uint16_t secondaryColor = currentTheme.textSecondary;
-  
-  // Clear screen with inverted background
-  gfx->fillScreen(bgColor);
-  
-  // Show loading message
-  gfx->setTextColor(textColor);
-  gfx->setTextSize(2);
-  gfx->setCursor(screenWidth / 2 - 100, screenHeight / 2 - 10);
-  gfx->println("Loading leaderboard...");
-  
+
+  showStatus("Leaderboard", "Loading world records...", secondaryColor);
+
   // Fetch leaderboard
   Leaderboard leaderboard = fetchLeaderboard();
-  
-  // Clear screen again
+
   gfx->fillScreen(bgColor);
-  
+
   // Title
-  gfx->setTextColor(accentColor);
-  gfx->setTextSize(3);
-  gfx->setCursor(screenWidth / 2 - 110, 15);
-  gfx->println("WORLD RECORDS");
-  
+  drawCenteredText("WORLD RECORDS", screenWidth / 2, 12, 3, textColor);
+  gfx->fillRect(screenWidth / 2 - 30, 38, 60, 4, currentTheme.accent);
+
   if (leaderboard.valid && leaderboard.count > 0) {
-    // Draw leaderboard entries — textSize 2, lineHeight 22 fits all 10 in 320px height
-    int16_t startY = 48;
-    int16_t lineHeight = 22;
-    
+    // Medal colors (intended on-screen values, inverted for the panel)
+    const uint16_t goldColor   = invertColor(0xFEA0);  // #FFD700
+    const uint16_t silverColor = invertColor(0xC618);  // #C0C0C0
+    const uint16_t bronzeColor = invertColor(0xCBE6);  // #CD7F32
+
+    int16_t startY = 52;
+    int16_t lineHeight = 23;
+
     for (int i = 0; i < leaderboard.count; i++) {
       int16_t y = startY + (i * lineHeight);
-      
-      // Highlight top 3
-      uint16_t entryColor = textColor;
-      if (i == 0) entryColor = 0x001F;      // Gold: ~0xFFE0, appears yellow/gold on inverted display
-      else if (i == 1) entryColor = 0x39E7; // Silver: ~0xC618, appears silver/gray on inverted display
-      else if (i == 2) entryColor = 0x039F; // Bronze: ~0xFC60, appears orange/bronze on inverted display
-      
-      gfx->setTextColor(entryColor);
-      gfx->setTextSize(2);
-      
-      // Rank
-      gfx->setCursor(10, y);
-      gfx->print(leaderboard.entries[i].rank);
-      gfx->print(".");
-      
+
+      // Subtle zebra striping for scanability
+      if (i % 2 == 0) {
+        gfx->fillRoundRect(8, y - 3, screenWidth - 16, lineHeight - 2, 4, currentTheme.buttonKeys);
+      }
+
+      // Rank badge — medals for the top 3
+      uint16_t badgeColor = currentTheme.buttonSecondary;
+      if (i == 0) badgeColor = goldColor;
+      else if (i == 1) badgeColor = silverColor;
+      else if (i == 2) badgeColor = bronzeColor;
+      gfx->fillCircle(26, y + 7, 10, badgeColor);
+      String rankStr = String(leaderboard.entries[i].rank);
+      gfx->setTextColor(i < 3 ? currentTheme.background : currentTheme.text);
+      gfx->setTextSize(1);
+      gfx->setCursor(26 - (int16_t)rankStr.length() * 3, y + 4);
+      gfx->print(rankStr);
+
       // Name (truncate if too long)
       String displayName = leaderboard.entries[i].name;
       if (displayName.length() > 12) {
         displayName = displayName.substring(0, 12);
       }
-      gfx->setCursor(45, y);
+      gfx->setTextColor(textColor);
+      gfx->setTextSize(2);
+      gfx->setCursor(48, y);
       gfx->print(displayName);
-      
+
       // Score (right aligned)
       String scoreStr = String(leaderboard.entries[i].score);
-      int16_t scoreX = screenWidth - 15 - (scoreStr.length() * 12);
+      int16_t scoreX = screenWidth - 16 - (scoreStr.length() * 12);
       gfx->setCursor(scoreX, y);
       gfx->print(scoreStr);
     }
   } else {
     // No data available
-    gfx->setTextColor(secondaryColor);
-    gfx->setTextSize(2);
-    gfx->setCursor(screenWidth / 2 - 95, screenHeight / 2 - 20);
-    gfx->println("No records yet!");
-    gfx->setCursor(screenWidth / 2 - 85, screenHeight / 2 + 10);
-    gfx->println("Be the first!");
+    drawCenteredText("No records yet!", screenWidth / 2, 140, 2, secondaryColor);
+    drawCenteredText("Be the first!", screenWidth / 2, 170, 2, secondaryColor);
   }
-  
+
   // Instructions
-  gfx->setTextColor(secondaryColor);
-  gfx->setTextSize(2);
-  gfx->setCursor(screenWidth / 2 - 90, screenHeight - 25);
-  gfx->println("Touch to continue");
-  
+  drawCenteredText("touch to continue", screenWidth / 2, 302, 1, secondaryColor);
+
   // Wait for touch to exit
   while (!touch.touched()) {
     delay(50);

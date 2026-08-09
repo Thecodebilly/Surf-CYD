@@ -56,56 +56,62 @@ String touchKeyboardInput(const String &title, const String &initial, bool secre
     gfx->fillScreen(currentTheme.background);
     gfx->setTextColor(currentTheme.textSecondary);
     gfx->setTextSize(2);
-    gfx->setCursor(8, 8);
+    gfx->setCursor(12, 8);
     gfx->println(title);
 
-    gfx->drawRect(8, 30, gfx->width() - 16, 28, currentTheme.border);
-    gfx->setCursor(12, 38);
+    // Input field with cursor
+    gfx->fillRoundRect(8, 28, gfx->width() - 16, 34, 6, currentTheme.buttonKeys);
+    gfx->drawRoundRect(8, 28, gfx->width() - 16, 34, 6, currentTheme.border);
+    gfx->setCursor(16, 38);
     gfx->setTextColor(currentTheme.text);
     String shown = value;
     if (secret) {
       shown = "";
       for (size_t i = 0; i < value.length(); ++i) shown += '*';
     }
-    if (shown.length() > 28) shown = shown.substring(shown.length() - 28);
-    gfx->println(shown);
+    if (shown.length() > 34) shown = shown.substring(shown.length() - 34);
+    gfx->print(shown);
+    gfx->setTextColor(currentTheme.accent);
+    gfx->print("_");
 
     const char **rows = symMode ? symRows : (shiftOn ? rowsUpper : rowsLower);
     int numRows = symMode ? 3 : 4;
     keyCount = 0;
-    int y = 66;
+    int y = 74;
     for (int r = 0; r < numRows; ++r) {
       int len = strlen(rows[r]);
       int keyW = (gfx->width() - 16 - (len - 1) * 2) / len;
       for (int i = 0; i < len; ++i) {
-        Rect kr = {int16_t(8 + i * (keyW + 2)), int16_t(y), int16_t(keyW), int16_t(24)};
+        Rect kr = {int16_t(8 + i * (keyW + 2)), int16_t(y), int16_t(keyW), int16_t(30)};
         String label = String(rows[r][i]);
-        drawButton(kr, label, currentTheme.buttonKeys, currentTheme.text, 1);
+        drawButton(kr, label, currentTheme.buttonKeys, currentTheme.text, 2);
         keyRects[keyCount] = kr;
         keyLabels[keyCount] = label;
         keyCount++;
       }
-      y += 28;
+      y += 34;
     }
 
     // Bottom action row — shift repurposes as "ABC" in symbol mode
-    Rect shift  = {8,   180, 60, 26};
-    Rect back   = {74,  180, 60, 26};
-    Rect clear  = {140, 180, 60, 26};
-    Rect space  = {206, 180, 60, 26};
-    Rect done   = {272, 180, 40, 26};
-    Rect symBtn = {318, 180, 60, 26};
+    Rect shift  = {8,   220, 68, 40};
+    Rect back   = {82,  220, 68, 40};
+    Rect clear  = {156, 220, 68, 40};
+    Rect space  = {230, 220, 92, 40};
+    Rect symBtn = {328, 220, 58, 40};
+    Rect done   = {392, 220, 80, 40};
 
     if (symMode) {
-      drawButton(shift, "ABC", currentTheme.buttonWarning, currentTheme.text, 1);
+      drawButton(shift, "ABC", currentTheme.buttonSecondary, currentTheme.text, 2);
     } else {
-      drawButton(shift, shiftOn ? "lwr" : "CAPS", currentTheme.buttonWarning, currentTheme.text, 1);
-      drawButton(symBtn, "SYM", currentTheme.buttonSecondary, currentTheme.text, 1);
+      drawButton(shift, "CAPS",
+                 shiftOn ? currentTheme.accent : currentTheme.buttonSecondary,
+                 shiftOn ? currentTheme.background : currentTheme.text, 2);
+      drawButton(symBtn, "SYM", currentTheme.buttonSecondary, currentTheme.text, 2);
     }
-    drawButton(back,  "<-",  currentTheme.buttonWarning,   currentTheme.text, 1);
-    drawButton(clear, "CLR", currentTheme.buttonDanger,    currentTheme.text, 1);
-    drawButton(space, "SPC", currentTheme.buttonSecondary, currentTheme.text, 1);
-    drawButton(done,  "OK",  currentTheme.buttonPrimary,   currentTheme.text, 1);
+    drawButton(back,  "<-",    currentTheme.buttonSecondary, currentTheme.text, 2);
+    drawButton(clear, "CLR",   currentTheme.buttonWarning,   currentTheme.text, 2);
+    drawButton(space, "SPACE", currentTheme.buttonKeys,      currentTheme.text, 2);
+    drawButton(done,  "OK",    currentTheme.buttonPrimary,   currentTheme.text, 2);
 
     while (true) {
       TouchPoint p = getTouchPoint();
@@ -218,13 +224,10 @@ WifiCredentials runWifiSetupTouch() {
   while (true) {
     if (needsRedraw) {
       gfx->fillScreen(currentTheme.background);
-      gfx->setTextColor(currentTheme.textSecondary);
-      gfx->setTextSize(2);
-      gfx->setCursor(10, 10);
-      gfx->println("Wi-Fi Setup");
+      drawScreenHeader("Wi-Fi Setup");
 
-      drawButton(ssidButton, "Wifi name: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid), 
-                 currentTheme.buttonSecondary, currentTheme.text, 1);
+      drawButton(ssidButton, "Wifi name: " + (creds.ssid.isEmpty() ? String("<tap to set>") : creds.ssid),
+                 currentTheme.buttonKeys, currentTheme.text, 1);
       String masked = "<tap to set>";
       if (!creds.password.isEmpty()) {
         if (showPassword) {
@@ -234,8 +237,8 @@ WifiCredentials runWifiSetupTouch() {
           for (size_t i = 0; i < creds.password.length(); ++i) masked += '*';
         }
       }
-      drawButton(passButton, "PASS: " + masked, currentTheme.buttonSecondary, currentTheme.text, 1);
-      drawButton(passToggleButton, showPassword ? "Hide" : "Show", currentTheme.buttonWarning, currentTheme.text, 1);
+      drawButton(passButton, "PASS: " + masked, currentTheme.buttonKeys, currentTheme.text, 1);
+      drawButton(passToggleButton, showPassword ? "Hide" : "Show", currentTheme.buttonSecondary, currentTheme.text, 1);
       drawButton(connectButton, "Save + Connect", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawSettingsButton(settingsBtn);
       needsRedraw = false;
@@ -283,11 +286,12 @@ int selectLocationFromList(const std::vector<LocationInfo> &locations) {
   
   while (true) {
     gfx->fillScreen(currentTheme.background);
-    gfx->setTextColor(currentTheme.textSecondary);
+    gfx->setTextColor(currentTheme.text);
     gfx->setTextSize(2);
-    gfx->setCursor(10, 10);
-    gfx->println("Select Location:");
-    
+    gfx->setCursor(12, 10);
+    gfx->println("Select Location");
+    gfx->fillRect(12, 29, 36, 3, currentTheme.accent);
+
     std::vector<Rect> buttons;
     for (size_t i = 0; i < locations.size() && i < 7; i++) {
       Rect r = {8, int16_t(startY + i * itemHeight), int16_t(gfx->width() - 16), int16_t(itemHeight - 4)};
@@ -296,10 +300,10 @@ int selectLocationFromList(const std::vector<LocationInfo> &locations) {
       drawButton(r, label, currentTheme.buttonList, currentTheme.text, 1);
       buttons.push_back(r);
     }
-    
+
     // Cancel button
     Rect cancelBtn = {8, int16_t(startY + 7 * itemHeight), int16_t(gfx->width() - 16), 30};
-    drawButton(cancelBtn, "Cancel", currentTheme.buttonDanger, currentTheme.text, 2);
+    drawButton(cancelBtn, "Cancel", currentTheme.buttonSecondary, currentTheme.text, 2);
     
     while (true) {
       TouchPoint p = getTouchPoint();
@@ -337,22 +341,23 @@ LocationInfo selectDefaultLocation() {
 
   while (true) {
     gfx->fillScreen(currentTheme.background);
-    gfx->setTextColor(currentTheme.textSecondary);
+    gfx->setTextColor(currentTheme.text);
     gfx->setTextSize(2);
-    gfx->setCursor(10, 10);
-    gfx->println("Choose Default:");
+    gfx->setCursor(12, 10);
+    gfx->println("Choose Default");
+    gfx->fillRect(12, 29, 36, 3, currentTheme.accent);
 
     std::vector<Rect> buttons;
     for (size_t i = 0; i < defaults.size(); i++) {
       Rect r = {8, int16_t(startY + i * itemHeight), int16_t(gfx->width() - 16), int16_t(itemHeight - 4)};
       String label = defaults[i].displayName;
       if (label.length() > 35) label = label.substring(0, 35) + "...";
-      drawButton(r, label, currentTheme.buttonPrimary, currentTheme.text, 1);
+      drawButton(r, label, currentTheme.buttonList, currentTheme.text, 1);
       buttons.push_back(r);
     }
 
     Rect cancelBtn = {8, int16_t(startY + (int)defaults.size() * itemHeight + 4), int16_t(gfx->width() - 16), 30};
-    drawButton(cancelBtn, "Cancel", currentTheme.buttonDanger, currentTheme.text, 2);
+    drawButton(cancelBtn, "Cancel", currentTheme.buttonSecondary, currentTheme.text, 2);
 
     while (true) {
       TouchPoint p = getTouchPoint();
@@ -387,36 +392,31 @@ float runWaveHeightSetupTouch() {
   while (true) {
     if (needsRedraw) {
       gfx->fillScreen(currentTheme.background);
+      drawScreenHeader("Wave Height");
+
       gfx->setTextColor(currentTheme.textSecondary);
       gfx->setTextSize(2);
-      gfx->setCursor(10, 10);
-      gfx->println("Wave Height Preference");
-      
+      gfx->setCursor(12, 60);
+      gfx->println("What size waves make you happy?");
+
+      // Draw slider bar with value alongside
+      gfx->drawRoundRect(sliderArea.x, sliderArea.y, sliderArea.w, sliderArea.h, 6, currentTheme.border);
+      int barWidth = (int)((selectedThreshold - 0.5f) / 9.5f * (sliderArea.w - 6));
+      if (barWidth > 0) {
+        gfx->fillRect(sliderArea.x + 3, sliderArea.y + 3, barWidth, sliderArea.h - 6, currentTheme.accent);
+      }
       gfx->setTextColor(currentTheme.text);
       gfx->setTextSize(3);
-      gfx->setCursor(10, 35);
-      gfx->println("What size waves");
-      gfx->setCursor(10, 60);
-      gfx->println("make you happy?");
-      
-      // Draw slider bar
-      gfx->drawRect(sliderArea.x, sliderArea.y, sliderArea.w, sliderArea.h, currentTheme.border);
-      int barWidth = (int)((selectedThreshold - 0.5f) / 9.5f * (sliderArea.w - 4));
-      gfx->fillRect(sliderArea.x + 2, sliderArea.y + 2, barWidth, sliderArea.h - 4, currentTheme.accent);
-      
-      // Display selected value
-      gfx->setTextColor(currentTheme.text);
-      gfx->setTextSize(3);
-      gfx->setCursor(140, 140);
+      gfx->setCursor(sliderArea.x + sliderArea.w + 16, sliderArea.y + (sliderArea.h - 24) / 2);
       gfx->println(String(selectedThreshold, 1) + "ft");
-      
+
       // Draw buttons
-      drawButton(decButton, "-", currentTheme.buttonSecondary, currentTheme.text, 2);
-      drawButton(incButton, "+", currentTheme.buttonPrimary, currentTheme.text, 2);
+      drawButton(decButton, "-", currentTheme.buttonSecondary, currentTheme.text, 3);
+      drawButton(incButton, "+", currentTheme.buttonPrimary, currentTheme.text, 3);
       drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawButton(skipButton, "3 ft", currentTheme.buttonList, currentTheme.text, 2);
       drawSettingsButton(settingsBtn);
-      
+
       needsRedraw = false;
     }
 
@@ -467,14 +467,16 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
   while (true) {
     if (needsRedraw) {
       gfx->fillScreen(currentTheme.background);
+      drawScreenHeader("Surf Location");
+
       gfx->setTextColor(currentTheme.textSecondary);
-      gfx->setTextSize(2);
-      gfx->setCursor(10, 10);
-      gfx->println("Surf Location");
+      gfx->setTextSize(1);
+      gfx->setCursor(12, 64);
+      gfx->println("Tap the field to search for a spot");
 
       String shownLocation = location.isEmpty() ? String("<tap to set>") : location;
       if (shownLocation.length() > 38) shownLocation = shownLocation.substring(0, 38) + "...";
-      drawButton(locationButton, shownLocation, currentTheme.buttonSecondary, currentTheme.text, 1);
+      drawButton(locationButton, shownLocation, currentTheme.buttonKeys, currentTheme.text, 1);
       drawButton(saveButton, "Save", currentTheme.buttonPrimary, currentTheme.text, 2);
       drawButton(skipButton, "Default", currentTheme.buttonList, currentTheme.text, 2);
       if (cachedLocation.valid) {
@@ -722,13 +724,7 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
         }
 
         if (validMatches.empty()) {
-          gfx->fillScreen(currentTheme.background);
-          gfx->setCursor(10, 50);
-          gfx->setTextColor(currentTheme.error);
-          gfx->println("No surf data available");
-          gfx->setCursor(10, 75);
-          gfx->setTextColor(currentTheme.textSecondary);
-          gfx->println("Try a coastal location");
+          showStatus("No surf data found", "Try a coastal location", currentTheme.error);
           delay(2500);
         } else if (validMatches.size() == 1) {
           location = validMatches[0].displayName;
@@ -740,8 +736,10 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
             cachedLocation = validMatches[selectedIndex];
           }
         }
-        needsRedraw = true;
       }
+      // Always repaint — the keyboard was drawn over this screen even when
+      // the search term came back empty.
+      needsRedraw = true;
     } else if (pointInRect(p.x, p.y, saveButton) && !location.isEmpty()) {
       while (touch.touched()) delay(20);
       // Ensure we have valid location coordinates before saving
@@ -755,13 +753,7 @@ String runLocationSetupTouch(LocationInfo &cachedLocation) {
         return cachedLocation.displayName;
       } else {
         // Need to search and select first
-        gfx->fillScreen(currentTheme.background);
-        gfx->setTextColor(currentTheme.error);
-        gfx->setTextSize(2);
-        gfx->setCursor(10, 100);
-        gfx->println("Please search and");
-        gfx->setCursor(10, 125);
-        gfx->println("select location first");
+        showStatus("No spot selected", "Search and pick a location first", currentTheme.error);
         delay(2000);
         needsRedraw = true;
       }

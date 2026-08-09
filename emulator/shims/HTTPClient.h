@@ -20,6 +20,26 @@ extern "C"
 char* _js_http_fetch(const char* jsMethod, const char* jsUrl,
                      const char* jsHeaders, const char* jsBody, int jsTimeoutMs);
 
+// Read-only Stream view over an already-buffered response body.
+class HTTPResponseStream : public Stream {
+    const std::string* _body = nullptr;
+    size_t             _pos  = 0;
+
+public:
+    void reset(const std::string* body) { _body = body; _pos = 0; }
+
+    int available() override { return _body ? (int)(_body->size() - _pos) : 0; }
+    int read() override {
+        if (!_body || _pos >= _body->size()) return -1;
+        return (unsigned char)(*_body)[_pos++];
+    }
+    int peek() override {
+        if (!_body || _pos >= _body->size()) return -1;
+        return (unsigned char)(*_body)[_pos];
+    }
+    size_t write(uint8_t) override { return 0; }
+};
+
 // ── HTTPClient shim ───────────────────────────────────────────────────────────
 class HTTPClient {
     std::string              _url;
@@ -27,6 +47,7 @@ class HTTPClient {
     int                      _statusCode = 0;
     int                      _timeout    = 10000;
     std::vector<std::string> _headerKV;   // alternating key, value
+    HTTPResponseStream       _bodyStream;
 
     int _sendRequest(const char* method, const char* body = nullptr) {
         // Encode headers as "Key: Value\n..." for the JS side
@@ -82,8 +103,10 @@ public:
         return _sendRequest("POST", body.c_str());
     }
 
-    String getString()      { return String(_responseBody.c_str()); }
-    int    getResponseCode(){ return _statusCode; }
+    String  getString()      { return String(_responseBody.c_str()); }
+    int     getResponseCode(){ return _statusCode; }
+    int     getSize()        { return (int)_responseBody.size(); }
+    Stream* getStreamPtr()   { _bodyStream.reset(&_responseBody); return &_bodyStream; }
 
     void end() {
         _url.clear();

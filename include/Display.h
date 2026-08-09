@@ -13,6 +13,8 @@ void setupDisplay();
 
 // Drawing functions
 void drawButton(const Rect &r, const String &label, uint16_t bg, uint16_t fg, uint8_t textSize);
+void drawCenteredText(const String &text, int16_t centerX, int16_t y, uint8_t textSize, uint16_t color);
+void drawScreenHeader(const String &title);
 void showStatus(const String &line1, const String &line2, uint16_t color);
 void drawGoodSurfGraphic(int16_t x, int16_t y, uint16_t color);
 void drawBadSurfGraphic(int16_t x, int16_t y, uint16_t color);

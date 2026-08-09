@@ -1,4 +1,5 @@
 #include "Database.h"
+#include "RecordParser.h"
 #include "Storage.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -6,39 +7,59 @@
 
 static const char *API_BASE = "https://surf-board-api-production.up.railway.app";
 
-// Fetch the top-scoring record (GET /records returns rows ordered by score DESC).
-GlobalHighScore fetchGlobalHighScore() {
-  GlobalHighScore result;
+// GET /records, keeping the highest `capacity` scores.
+//
+// The endpoint returns every score ever posted as one array — already several
+// kilobytes and growing with each game — so the response is parsed one element
+// at a time rather than loaded into a fixed JSON buffer.
+//
+// Returns the number of records written to `out`, or -1 on failure.
+static int fetchTopRecords(TopRecord *out, int capacity, const char *context) {
   if (WiFi.status() != WL_CONNECTED) {
-    logError("fetchGlobalHighScore: WiFi not connected");
-    return result;
+    logError(String(context) + ": WiFi not connected");
+    return -1;
   }
 
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.begin(String(API_BASE) + "/records");
   http.setTimeout(10000);
-  int code = http.GET();
+
+  int code  = http.GET();
+  int count = -1;
 
   if (code == HTTP_CODE_OK) {
-    String payload = http.getString();
-    DynamicJsonDocument doc(4096);
-    if (!deserializeJson(doc, payload)) {
-      JsonArray arr = doc.as<JsonArray>();
-      if (!arr.isNull() && arr.size() > 0) {
-        result.name  = arr[0]["name"].as<String>();
-        result.score = arr[0]["score"] | 0UL;
-        result.valid = true;
-        logInfo("Global high score: " + result.name + " - " + String(result.score));
-      }
+    if (http.getSize() >= 0) {
+      // Content-Length known: read straight off the socket.
+      count = parseTopRecords(*http.getStreamPtr(), out, capacity);
     } else {
-      logError("fetchGlobalHighScore: JSON parse failed");
+      // Chunked reply — the raw stream would still carry the chunk framing, so
+      // let HTTPClient unwrap it first.
+      String payload = http.getString();
+      MemoryStream buffered(payload.c_str());
+      count = parseTopRecords(buffered, out, capacity);
     }
+    if (count < 0) logError(String(context) + ": JSON parse failed");
   } else {
-    logError("fetchGlobalHighScore: HTTP " + String(code));
+    logError(String(context) + ": HTTP " + String(code));
   }
 
   http.end();
+  return count;
+}
+
+// Fetch the top-scoring record.
+GlobalHighScore fetchGlobalHighScore() {
+  GlobalHighScore result;
+
+  TopRecord top[1];
+  if (fetchTopRecords(top, 1, "fetchGlobalHighScore") > 0) {
+    result.name  = top[0].name;
+    result.score = top[0].score;
+    result.valid = true;
+    logInfo("Global high score: " + result.name + " - " + String(result.score));
+  }
+
   return result;
 }
 
@@ -81,43 +102,22 @@ String submitRecord(const String &name, unsigned long score) {
   return errorMsg;
 }
 
-// Fetch all records ordered by score DESC, return up to 10 as a Leaderboard.
+// Fetch the highest LEADERBOARD_SIZE scores.
 Leaderboard fetchLeaderboard() {
   Leaderboard result;
-  if (WiFi.status() != WL_CONNECTED) {
-    logError("fetchLeaderboard: WiFi not connected");
-    return result;
+
+  TopRecord top[LEADERBOARD_SIZE];
+  int count = fetchTopRecords(top, LEADERBOARD_SIZE, "fetchLeaderboard");
+  if (count < 0) return result;
+
+  for (int i = 0; i < count; i++) {
+    result.entries[i].rank  = i + 1;
+    result.entries[i].name  = top[i].name;
+    result.entries[i].score = top[i].score;
   }
+  result.count = count;
+  result.valid = true;
+  logInfo("Leaderboard fetched: " + String(count) + " entries");
 
-  HTTPClient http;
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.begin(String(API_BASE) + "/records");
-  http.setTimeout(10000);
-  int code = http.GET();
-
-  if (code == HTTP_CODE_OK) {
-    String payload = http.getString();
-    DynamicJsonDocument doc(4096);
-    if (!deserializeJson(doc, payload)) {
-      JsonArray arr = doc.as<JsonArray>();
-      if (!arr.isNull()) {
-        for (JsonVariant entry : arr) {
-          if (result.count >= 10) break;
-          result.entries[result.count].rank  = result.count + 1;
-          result.entries[result.count].name  = entry["name"].as<String>();
-          result.entries[result.count].score = entry["score"] | 0UL;
-          result.count++;
-        }
-        result.valid = true;
-        logInfo("Leaderboard fetched: " + String(result.count) + " entries");
-      }
-    } else {
-      logError("fetchLeaderboard: JSON parse failed");
-    }
-  } else {
-    logError("fetchLeaderboard: HTTP " + String(code));
-  }
-
-  http.end();
   return result;
 }
