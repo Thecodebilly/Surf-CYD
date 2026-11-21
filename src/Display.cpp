@@ -588,7 +588,8 @@ void viewFilesScreen(Rect &backButton) {
               gfx->print(String(kv.key().c_str()) + ":");
 
               gfx->setTextColor(currentTheme.text);
-              String value = kv.value().as<String>();
+              // Anyone at the display can open this screen, so never show the Wi-Fi password.
+              String value = strcmp(kv.key().c_str(), "password") == 0 ? String("********") : kv.value().as<String>();
               if (value.length() > 30) value = value.substring(0, 27) + "...";
               gfx->print(" " + value);
               y += lineHeight;

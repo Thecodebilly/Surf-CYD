@@ -877,10 +877,14 @@ int handleSettingsScreenTouch(const Rect &backButton, const Rect &forgetButton, 
     delay(2000);
     ESP.restart();  // Restart to apply reset
   }
+  // Wait for release so the opening tap doesn't also scroll the files list or
+  // dismiss the leaderboard.
   if (pointInRect(p.x, p.y, filesButton)) {
+    while (touch.touched()) delay(20);
     return 5;  // View files screen
   }
   if (pointInRect(p.x, p.y, leaderboardButton)) {
+    while (touch.touched()) delay(20);
     return 7;  // Show leaderboard
   }
   return 0;
