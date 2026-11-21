@@ -37,11 +37,16 @@ bool currentHasTideFile = false;
 
 void ensureWifiConnected() {
   wifiCredentials = loadWifiCredentials();
-  if (!wifiCredentials.valid || !connectWifi(wifiCredentials)) {
-    while (true) {
-      wifiCredentials = runWifiSetupTouch();
-      if (connectWifi(wifiCredentials)) break;
-    }
+  // A router reboot or power cut must not leave the display on the setup screen:
+  // keep retrying the saved network until someone taps to enter a new one.
+  while (wifiCredentials.valid) {
+    if (connectWifi(wifiCredentials)) return;
+    showStatus("Wi-Fi failed", "Retrying - tap to re-enter", currentTheme.error);
+    if (waitForTap(WIFI_RETRY_WAIT_MS)) break;
+  }
+  while (true) {
+    wifiCredentials = runWifiSetupTouch();
+    if (connectWifi(wifiCredentials)) break;
   }
 }
 
@@ -244,6 +249,9 @@ void loop() {
   // Keep compatibility file updated for diagnostics/screens that inspect it.
   saveTideDirection(forecast.tideHeight, currentTime, currentTideDirection);
 
+  // The refresh can land while Settings is open; once the forecast is drawn,
+  // taps must not hit the now-invisible settings buttons (Reset All etc.).
+  inSettingsMode = false;
   drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection, currentHasTideFile);
 
   uint32_t start = millis();
@@ -256,7 +264,9 @@ void loop() {
         // Location-affecting button: WiFi or Location
         inSettingsMode = false;
         ensureWifiConnected();
-        cachedLocation = LocationInfo();
+        // Reload the saved spot (gone after Reset Location). Geocoding its display
+        // name instead fails for names like "Jax Beach Pier" and loses the spot.
+        cachedLocation = loadSurfLocationInfo();
         locationRetryCount = 0;
         surfRetryCount = 0;
         // Reset tide state so it is cleanly re-seeded for the new location

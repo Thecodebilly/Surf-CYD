@@ -43,6 +43,8 @@ extern const char *DEFAULTS_FILE;
 
 // Timing
 static const uint32_t REFRESH_INTERVAL_MS = 900000; // 15 minutes
+static const uint32_t IDLE_SCREEN_TIMEOUT_MS = 60000; // game over / leaderboard fall back to the forecast
+static const uint32_t WIFI_RETRY_WAIT_MS = 60000;     // between retries of the saved network
 
 // API URLs
 static const char *GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";

@@ -542,12 +542,9 @@ void runSurfGame(Rect &exitButton) {
   delay(500);
   while (touch.touched()) delay(20); // Drain any touches during wait
 
-  // Wait for touch to exit
-  while (!touch.touched()) {
-    delay(50);
-  }
-  while (touch.touched()) delay(20); // Debounce
-  
+  // Wait for touch to exit; time out so an abandoned game returns to the forecast
+  waitForTap(IDLE_SCREEN_TIMEOUT_MS);
+
   // Submit every score to the leaderboard
   if (score > 0) {
     // Load the player name saved during setup
@@ -580,12 +577,7 @@ void runSurfGame(Rect &exitButton) {
     }
 
     drawCenteredText("touch to continue", screenWidth / 2, 302, 1, currentTheme.textSecondary);
-    
-    // Wait for touch
-    while (!touch.touched()) {
-      delay(50);
-    }
-    while (touch.touched()) delay(20); // Debounce
+    waitForTap(IDLE_SCREEN_TIMEOUT_MS);
   }
   
   // Show leaderboard after game over
@@ -655,18 +647,15 @@ void showLeaderboard() {
       gfx->setCursor(scoreX, y);
       gfx->print(scoreStr);
     }
-  } else {
-    // No data available
+  } else if (leaderboard.valid) {
     drawCenteredText("No records yet!", screenWidth / 2, 140, 2, secondaryColor);
     drawCenteredText("Be the first!", screenWidth / 2, 170, 2, secondaryColor);
+  } else {
+    drawCenteredText("Leaderboard unavailable", screenWidth / 2, 140, 2, currentTheme.error);
+    drawCenteredText("Try again later", screenWidth / 2, 170, 2, secondaryColor);
   }
 
   // Instructions
   drawCenteredText("touch to continue", screenWidth / 2, 302, 1, secondaryColor);
-
-  // Wait for touch to exit
-  while (!touch.touched()) {
-    delay(50);
-  }
-  while (touch.touched()) delay(20); // Debounce
+  waitForTap(IDLE_SCREEN_TIMEOUT_MS);
 }

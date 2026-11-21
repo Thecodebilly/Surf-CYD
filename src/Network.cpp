@@ -560,10 +560,11 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     return 0.0f;
   }
   
-  // Get current date in YYYYMMDD format
+  // Get current date in YYYYMMDD format. UTC, to match time_zone=gmt below (the
+  // device clock is UTC anyway; the browser emulator's localtime is not).
   struct tm timebuf;  // own copy — avoids pointer invalidation if anything calls localtime/gmtime
   {
-    struct tm *tmp = localtime(&now);
+    struct tm *tmp = gmtime(&now);
     if (tmp) timebuf = *tmp;
     else { minTide = 0.0f; maxTide = 0.0f; return 0.0f; }
   }
@@ -571,7 +572,8 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
   char dateStr[16];
   strftime(dateStr, sizeof(dateStr), "%Y%m%d", timeinfo);
   String currentDate = String(dateStr);
-  String cacheKey = currentDate + "_gmt"; // suffix ensures old lst_ldt cache is ignored
+  // gmt suffix ensures old lst_ldt cache is ignored; the station keeps a fallback station's bounds apart
+  String cacheKey = currentDate + "_gmt_" + stationId;
   
   // Check if we have cached tide bounds for today
   String cachedDate = "";
@@ -692,26 +694,33 @@ float fetchNOAATideHeight(const String &stationId, float &minTide, float &maxTid
     http.begin(url);
     http.setTimeout(10000);
     int code = http.GET();
+    // On failure clear the cached bounds too: all-zero means "no tide data",
+    // where cached bounds with a 0.0 height would draw a wrong 0.0 ft tide.
     if (code != HTTP_CODE_OK) {
       logError("Failed to fetch current NOAA tide: HTTP " + String(code));
       http.end();
-      // Preserve cached minTide/maxTide — they were loaded above and are still valid
+      minTide = 0.0f;
+      maxTide = 0.0f;
       return 0.0f;
     }
-    
+
     String payload = http.getString();
     http.end();
-    
+
     DynamicJsonDocument doc(8 * 1024);
     DeserializationError error = deserializeJson(doc, payload);
     if (error) {
       logError("Failed to parse NOAA tide JSON: " + String(error.c_str()));
+      minTide = 0.0f;
+      maxTide = 0.0f;
       return 0.0f;
     }
-    
+
     JsonArray predictions = doc["predictions"];
     if (predictions.isNull() || predictions.size() == 0) {
       logError("No current tide prediction in NOAA response");
+      minTide = 0.0f;
+      maxTide = 0.0f;
       return 0.0f;
     }
     
@@ -921,8 +930,10 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
   if (!cachedStationId.isEmpty()) {
     forecast.tideHeight = fetchNOAATideHeight(cachedStationId, forecast.minTide, forecast.maxTide);
     Serial.printf("[TIDE] forecast: height=%.3fm, min=%.3fm, max=%.3fm\n", forecast.tideHeight, forecast.minTide, forecast.maxTide);
+    // A failed primary fetch returns all zeros; blending its 0.0 in would drag the height down.
+    bool primaryOk = forecast.minTide != 0.0f || forecast.maxTide != 0.0f;
 
-    if (cachedCandidateCount > 1) {
+    if (primaryOk && cachedCandidateCount > 1) {
       time_t blendNow = time(nullptr);
       const struct tm *ti = gmtime(&blendNow);
       const float MIN_DIST_KM = 5.0f;
@@ -949,13 +960,13 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
       forecast.tideHeight = blended;
     }
 
-    // If primary station failed to provide min/max bounds, fall back to a secondary station.
-    // This happens when the primary station API errors while secondary stations succeed for blend.
-    if (forecast.minTide == 0.0f && forecast.maxTide == 0.0f) {
+    // If the primary station failed, use the first secondary station that answers.
+    if (!primaryOk) {
       for (int i = 1; i < cachedCandidateCount; i++) {
         float secMin = 0.0f, secMax = 0.0f;
-        fetchNOAATideHeight(String(cachedCandidates[i].id), secMin, secMax);
+        float secHeight = fetchNOAATideHeight(String(cachedCandidates[i].id), secMin, secMax);
         if (secMin != 0.0f || secMax != 0.0f) {
+          forecast.tideHeight = secHeight;
           forecast.minTide = secMin;
           forecast.maxTide = secMax;
           logInfo("[TIDE] min/max fallback from secondary station " + String(cachedCandidates[i].id));
@@ -1023,6 +1034,7 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
           String dirStr   = wperiods[0]["windDirection"] | "";
           forecast.windSpeed     = parseNOAAWindSpeed(speedStr);
           forecast.windDirection = cardinalToDegrees(dirStr);
+          forecast.hasWind = !speedStr.isEmpty();
           logInfo("NOAA wind: " + speedStr + " from " + dirStr +
                   " (" + String(forecast.windDirection, 0) + "deg)");
         } else {

@@ -367,7 +367,8 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setTextSize(2);
   gfx->setCursor(windLabelX, 204);
   gfx->println("WIND");
-  String windStr = String(forecast.windSpeed, 1);
+  // No NWS wind (outside the US, or NWS down): show dashes, not a made-up 0.0 mph from N.
+  String windStr = forecast.hasWind ? String(forecast.windSpeed, 1) : String("--");
   gfx->setTextColor(currentTheme.periodDirNumberColor);
   gfx->setTextSize(5);
   gfx->setCursor(windLabelX, 224);
@@ -375,7 +376,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setTextColor(currentTheme.textSecondary);
   gfx->setTextSize(2);
   gfx->setCursor(windLabelX + (int16_t)windStr.length() * 30 + 4, 224 + 40 - 16);
-  gfx->print("mph");
+  if (forecast.hasWind) gfx->print("mph");
 
   // ── Bottom row: direction compasses ──
   const int16_t arrowY = 292;
@@ -385,7 +386,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->drawCircle(swellCenterX, arrowY, 23, currentTheme.border);
   gfx->drawCircle(windCenterX, arrowY, 23, currentTheme.border);
   drawDirectionArrow(swellCenterX, arrowY, 36, forecast.waveDirection + 180.0f, currentTheme.accent);
-  drawDirectionArrow(windCenterX, arrowY, 36, forecast.windDirection + 180.0f, currentTheme.text);
+  if (forecast.hasWind) drawDirectionArrow(windCenterX, arrowY, 36, forecast.windDirection + 180.0f, currentTheme.text);
 
   // Cardinal + caption beside each compass
   auto degreesToCardinal = [](float deg) -> const char* {
@@ -400,7 +401,7 @@ void drawForecast(const LocationInfo &location, const SurfForecast &forecast,
   gfx->setCursor(swellCenterX + 30, 278);
   gfx->print(degreesToCardinal(forecast.waveDirection));
   gfx->setCursor(windCenterX + 30, 278);
-  gfx->print(degreesToCardinal(forecast.windDirection));
+  gfx->print(forecast.hasWind ? degreesToCardinal(forecast.windDirection) : "--");
   gfx->setTextSize(1);
   gfx->setTextColor(currentTheme.textSecondary);
   gfx->setCursor(swellCenterX + 30, 298);
@@ -587,7 +588,8 @@ void viewFilesScreen(Rect &backButton) {
               gfx->print(String(kv.key().c_str()) + ":");
 
               gfx->setTextColor(currentTheme.text);
-              String value = kv.value().as<String>();
+              // Anyone at the display can open this screen, so never show the Wi-Fi password.
+              String value = strcmp(kv.key().c_str(), "password") == 0 ? String("********") : kv.value().as<String>();
               if (value.length() > 30) value = value.substring(0, 27) + "...";
               gfx->print(" " + value);
               y += lineHeight;
