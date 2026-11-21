@@ -15,6 +15,8 @@ void setupTouch();
 // Touch utilities
 bool pointInRect(int16_t x, int16_t y, const Rect &r);
 TouchPoint getTouchPoint();
+// Waits for a tap and its release; false if none came within timeoutMs.
+bool waitForTap(uint32_t timeoutMs);
 
 // UI interaction functions
 String touchKeyboardInput(const String &title, const String &initial, bool secret);

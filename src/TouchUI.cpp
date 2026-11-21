@@ -40,6 +40,18 @@ TouchPoint getTouchPoint() {
   return p;
 }
 
+bool waitForTap(uint32_t timeoutMs) {
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    if (touch.touched()) {
+      while (touch.touched()) delay(20);
+      return true;
+    }
+    delay(50);
+  }
+  return false;
+}
+
 String touchKeyboardInput(const String &title, const String &initial, bool secret) {
   String value = initial;
   bool shiftOn = false;

@@ -37,11 +37,16 @@ bool currentHasTideFile = false;
 
 void ensureWifiConnected() {
   wifiCredentials = loadWifiCredentials();
-  if (!wifiCredentials.valid || !connectWifi(wifiCredentials)) {
-    while (true) {
-      wifiCredentials = runWifiSetupTouch();
-      if (connectWifi(wifiCredentials)) break;
-    }
+  // A router reboot or power cut must not leave the display on the setup screen:
+  // keep retrying the saved network until someone taps to enter a new one.
+  while (wifiCredentials.valid) {
+    if (connectWifi(wifiCredentials)) return;
+    showStatus("Wi-Fi failed", "Retrying - tap to re-enter", currentTheme.error);
+    if (waitForTap(WIFI_RETRY_WAIT_MS)) break;
+  }
+  while (true) {
+    wifiCredentials = runWifiSetupTouch();
+    if (connectWifi(wifiCredentials)) break;
   }
 }
 
