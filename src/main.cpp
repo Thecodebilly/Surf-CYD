@@ -244,6 +244,9 @@ void loop() {
   // Keep compatibility file updated for diagnostics/screens that inspect it.
   saveTideDirection(forecast.tideHeight, currentTime, currentTideDirection);
 
+  // The refresh can land while Settings is open; once the forecast is drawn,
+  // taps must not hit the now-invisible settings buttons (Reset All etc.).
+  inSettingsMode = false;
   drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection, currentHasTideFile);
 
   uint32_t start = millis();
