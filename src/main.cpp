@@ -264,7 +264,9 @@ void loop() {
         // Location-affecting button: WiFi or Location
         inSettingsMode = false;
         ensureWifiConnected();
-        cachedLocation = LocationInfo();
+        // Reload the saved spot (gone after Reset Location). Geocoding its display
+        // name instead fails for names like "Jax Beach Pier" and loses the spot.
+        cachedLocation = loadSurfLocationInfo();
         locationRetryCount = 0;
         surfRetryCount = 0;
         // Reset tide state so it is cleanly re-seeded for the new location
