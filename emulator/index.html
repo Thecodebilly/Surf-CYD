@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Surf Board — Real-Time Surf Forecasts on ESP32</title>
+<link rel="icon" href="data:,">
 <style>
   /* ── Reset & base ─────────────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -609,13 +610,13 @@ var Module = {
   noInitialRun: false,
 };
 
-// Fail the loading overlay after 30s so it never spins forever
+// Fail the loading overlay after 60s so it never spins forever
 setTimeout(function() {
   var overlay = document.getElementById('loading-overlay');
   if (!overlay.classList.contains('hidden')) {
     overlay.classList.add('hidden');
     setStatus('err', 'Load timed out — check console');
-    appendLog('[err] WASM load timed out after 30s');
+    appendLog('[err] WASM load timed out after 60s');
   }
 }, 60000);
 </script>
