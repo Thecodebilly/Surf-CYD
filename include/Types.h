@@ -16,6 +16,7 @@ struct SurfForecast {
   float waveDirection = 0.0f;
   float windSpeed = 0.0f;
   float windDirection = 0.0f;
+  bool hasWind = false;  // NOAA NWS only covers the US
   float tideHeight = 0.0f;
   float minTide = 0.0f;
   float maxTide = 0.0f;
