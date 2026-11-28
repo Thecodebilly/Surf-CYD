@@ -48,6 +48,8 @@ Surf conditions display for an ESP32 "Cheap Yellow Display" with a touchscreen. 
 - Emulator build: run the firmware build first (the Makefile takes ArduinoJson from `.pio/libdeps`), then `docker run --rm -v "$PWD:/src" -w /src/emulator emscripten/emsdk:3.1.74 make OUTPUT=/tmp/surfcyd.js`. Verified; the output stays in the container. Drop `OUTPUT=...` to overwrite the committed `emulator/surfcyd.js` and `surfcyd.wasm`. Local route, not run: `cd emulator && ./setup.sh && source ~/emsdk/emsdk_env.sh && make` (`setup.sh` installs the latest emsdk into `~/emsdk`).
 - Emulator serve: `npm ci && npm start` at the root (port `PORT`, default 8080). Verified (`npm ci`, then `node server.js`, which is what `npm start` runs). `make serve` (python http.server on 8000) depends on the build target, so it can rebuild over the committed output: not run.
 - API: `cd api && npm install && npm start` (or `npm run dev` with nodemon). Not run: needs PostgreSQL. The pool always connects with SSL, so a local database needs SSL turned on. There are no migrations: the `records` table is created by hand (SQL in `api/README.md`; `api/server.js` prints it and exits when the table is missing). Use a throwaway database locally; the live one holds the leaderboard.
+- API smoke test: `api/test_api.sh [base-url]` (default `http://localhost:3000`). Not run: needs a running API with `API_KEY` unset (the script sends no key), and it can add TEST rows.
+- NOAA check: `python3 test_noaa_api.py` (needs `requests`). Not run: it calls the live NOAA API. It exits 0 even when a check fails, so read its PASSED/FAILED lines.
 - Syntax check: `node --check server.js && node --check api/server.js`. Verified.
 - There is no lint config and no CI.
 
