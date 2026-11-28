@@ -5,9 +5,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <Arduino_GFX_Library.h>
 
-extern Arduino_GFX *gfx;
 extern Theme currentTheme;
 
 // Forward declaration
@@ -907,7 +905,6 @@ SurfForecast fetchSurfForecast(float latitude, float longitude) {
       break;
     }
   }
-  forecast.timeLabel   = String(times[bestIdx].as<const char *>());
   forecast.waveHeight  = heights[bestIdx]    | 0.0f;
   forecast.wavePeriod  = periods[bestIdx]    | 0.0f;
   forecast.waveDirection = directions[bestIdx] | 0.0f;

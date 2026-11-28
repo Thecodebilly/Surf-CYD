@@ -10,7 +10,6 @@ extern Theme darkTheme;
 extern Theme lightTheme;
 extern bool darkMode;
 
-void initThemes();
 void applyTheme();
 uint16_t invertColor(uint16_t color);
 

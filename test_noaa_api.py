@@ -2,7 +2,6 @@
 """Test NOAA Tides and Currents API to verify it's working correctly"""
 
 import requests
-import json
 from datetime import datetime, timedelta
 
 

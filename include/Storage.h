@@ -31,7 +31,6 @@ void deleteSurfLocation();
 
 // Tide direction storage
 bool saveTideDirection(float tideHeightOneHourAgo, time_t tideDirectionTimestamp, int currentTideDirection);
-void loadTideDirection(float &tideHeightOneHourAgo, time_t &tideDirectionTimestamp, int &currentTideDirection);
 void deleteTideDirection();
 
 // Tide bounds storage (daily min/max)
