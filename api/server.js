@@ -149,7 +149,7 @@ app.post('/records', requireApiKey, async (req, res) => {
 
 // Submit new high score
 app.post('/highscore', requireApiKey, async (req, res) => {
-  const { playerName, score, timestamp } = req.body;
+  const { playerName, score } = req.body;
   
   if (!playerName || score === undefined || score === null) {
     return res.status(400).json({ error: 'Missing required fields' });

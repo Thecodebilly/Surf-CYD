@@ -16,7 +16,6 @@
 LocationInfo cachedLocation;
 WifiCredentials wifiCredentials;
 bool inSettingsMode = false;
-bool inGameMode = false;
 Rect settingsButton = {0, 0, 0, 0};
 Rect backButton = {0, 0, 0, 0};
 Rect forgetButton = {0, 0, 0, 0};
@@ -298,10 +297,8 @@ void loop() {
         drawSettingsScreen(backButton, forgetButton, forgetLocationButton, themeButton, waveButton, tideButton, filesButton, leaderboardButton);
       } else if (touchResult == 6) {
         // Bad surf graphic touched: enter game mode
-        inGameMode = true;
         runSurfGame(exitButton);
         // Game ended, return to main screen
-        inGameMode = false;
         drawForecast(cachedLocation, forecast, settingsButton, badSurfGraphicRect, waveHeightThreshold, forecast.minTide, forecast.maxTide, currentTideDirection, currentHasTideFile);
       }
     }

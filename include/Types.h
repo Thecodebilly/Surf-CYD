@@ -20,7 +20,6 @@ struct SurfForecast {
   float tideHeight = 0.0f;
   float minTide = 0.0f;
   float maxTide = 0.0f;
-  String timeLabel = "";
   bool valid = false;
 };
 

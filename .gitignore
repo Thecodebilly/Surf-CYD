@@ -9,3 +9,10 @@ node_modules/
 
 # Misc
 lib/
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Stray empty files once committed at the root
+/json
+/requests

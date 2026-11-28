@@ -1,5 +1,4 @@
 #include "Theme.h"
-#include <Arduino_GFX_Library.h>
 
 bool darkMode = true;
 
@@ -51,10 +50,6 @@ Theme lightTheme = {
 };
 
 Theme currentTheme = darkTheme;
-
-void initThemes() {
-  // Themes are already initialized as globals
-}
 
 uint16_t invertColor(uint16_t color) {
   return color ^ 0xFFFF;

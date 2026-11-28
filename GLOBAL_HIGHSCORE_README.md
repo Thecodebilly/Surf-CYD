@@ -272,7 +272,7 @@ Potential improvements:
 
 ## Credits
 
-- **PostgreSQL Database**: Railway (caboose.proxy.rlwy.net)
+- **PostgreSQL Database**: Railway
 - **ESP32 Framework**: Arduino/PlatformIO
 - **HTTP Client**: ESP32 HTTPClient library
 - **API Framework**: Express.js

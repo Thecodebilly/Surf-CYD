@@ -263,39 +263,6 @@ bool saveTideDirection(float tideHeightOneHourAgo, time_t tideDirectionTimestamp
   return true;
 }
 
-void loadTideDirection(float &tideHeightOneHourAgo, time_t &tideDirectionTimestamp, int &currentTideDirection) {
-  tideHeightOneHourAgo = 0.0f;
-  tideDirectionTimestamp = 0;
-  currentTideDirection = 0;
-
-  if (!SPIFFS.exists(TIDE_DIRECTION_FILE)) {
-    logInfo("No saved tide direction.");
-    return;
-  }
-
-  File f = SPIFFS.open(TIDE_DIRECTION_FILE, FILE_READ);
-  if (!f) {
-    logError("Failed to open tide direction file for read.");
-    return;
-  }
-
-  DynamicJsonDocument doc(512);
-  DeserializationError err = deserializeJson(doc, f);
-  f.close();
-  if (err) {
-    logError("Failed to parse tide direction file.");
-    return;
-  }
-
-  tideHeightOneHourAgo = doc["tideHeightOneHourAgo"] | 0.0f;
-  tideDirectionTimestamp = doc["tideDirectionTimestamp"] | 0L;
-  currentTideDirection = doc["currentTideDirection"] | 0;
-  
-  // Log with human-readable timestamp if available
-  String readableTime = doc["timestampReadable"] | String("unknown");
-  logInfo(String("Loaded tide direction: ") + String(currentTideDirection) + " (last update: " + readableTime + ")");
-}
-
 void deleteTideDirection() {
   if (SPIFFS.exists(TIDE_DIRECTION_FILE)) {
     SPIFFS.remove(TIDE_DIRECTION_FILE);
